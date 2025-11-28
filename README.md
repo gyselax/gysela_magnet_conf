@@ -1,0 +1,1 @@
+Reading and generating magnetic configurations for GYSELA and Gysela-X++
