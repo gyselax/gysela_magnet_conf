@@ -3,8 +3,16 @@ Reading and generating magnetic configurations for GYSELA and Gysela-X++
 
 To use, please clone the repository. You can either add the folder to ```PYTHONPATH``` or install it using
 
-```python
-pip install -c .
+```shell
+make install
 ```
 
-Examples are given in the ```examples``` folder.
+Examples are given in the ```examples``` folder. To run the examples please execute:
+
+
+```shell
+make install
+make example
+```
+
+This will download the necessary input files for the magnetic configurations that are needed in the examples.
