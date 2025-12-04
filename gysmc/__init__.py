@@ -18,7 +18,14 @@ Classes:
 from .magnet_config import MagnetConfig
 from .circular_magnetconfig import CircularMagnetConfig
 from .culham_magnetconfig import CulhamMagnetConfig
-from .geqdsk_magnetconfig import GEQDSKMagnetConfig
+try:
+    from .geqdsk_magnetconfig import GEQDSKMagnetConfig
+except ImportError:
+    GEQDSKMagnetConfig = None
+try:
+    from .gvec_magnetconfig import GvecMagnetConfig
+except ImportError:
+    GvecMagnetConfig = None
 from .q_profile import QProfile
 from .pressure_profile import PressureProfile
 from .GYSmagnet_config import GYSMagnetConfig
@@ -27,8 +34,12 @@ __all__ = [
     'MagnetConfig',
     'CircularMagnetConfig',
     'CulhamMagnetConfig',
-    'GEQDSKMagnetConfig',
     'QProfile',
     'PressureProfile',
     'GYSMagnetConfig',
 ]
+
+if GEQDSKMagnetConfig is not None:
+    __all__.append('GEQDSKMagnetConfig')
+if GvecMagnetConfig is not None:
+    __all__.append('GvecMagnetConfig')
