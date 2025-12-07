@@ -39,10 +39,11 @@ class GSEMagnetConfig(MagnetConfig):
     3. The child class can implement additional methods as needed.
     """
     @abstractmethod
-    def __init__(self, cocos=2, verbose=True):
+    def __init__(self, cocos=2, positive_current=False, verbose=True):
         """
         Initialisation of the magnetic configuration
         :param cocos: COCOS convection of the input, see [Sauter O, Medvedev SY. CPC 2013]
+        :param positive_current: enforcing positive plasma current
         :param verbose: whether to print verbose information
 
         see also set_cocos_convention method for a list of supported cocos conventions
@@ -50,6 +51,7 @@ class GSEMagnetConfig(MagnetConfig):
         """
 
         self.set_cocos_convention(cocos, verbose=verbose) # set cocos convention
+        self.positive_current = positive_current
 
     def set_cocos_convention(self, cocos, verbose=True):
         """
@@ -113,8 +115,10 @@ class GSEMagnetConfig(MagnetConfig):
         cb_R = CubicSpline(self.theta_vals, R_coord_theta_interp, axis=1, bc_type='periodic')
         cb_Z = CubicSpline(self.theta_vals, Z_coord_theta_interp, axis=1, bc_type='periodic')
 
+        Zaxis = np.mean(cb_Z(self.theta_vals)[0])
+
         R_coord = cb_R(theta)[:,:,None] + tor3_arr[None, None, :] * 0
-        Z_coord = cb_Z(theta)[:,:,None] + tor3_arr[None, None, :] * 0
+        Z_coord = cb_Z(theta)[:,:,None] + tor3_arr[None, None, :] * 0 - Zaxis
 
         return R_coord, Z_coord
 
@@ -156,11 +160,11 @@ class GSEMagnetConfig(MagnetConfig):
         :param tor1_arr: array of toroidal coordinates 1
         :return: Psi, dPsidr
         """
+        current_sign = self._determine_current_sign()
         r = tor1_arr
         s = r * self.s_at_r_one
-        Psi = s**2 * self.psi1_norm * self.signma_phi
-        dPsidr = 2 * s * self.s_at_r_one * self.psi1_norm * self.signma_phi
-
+        Psi = s**2 * self.psi1_norm * self.signma_phi * current_sign
+        dPsidr = 2 * s * self.s_at_r_one * self.psi1_norm * self.signma_phi * current_sign
         return Psi, dPsidr
 
     def get_q(self, tor1_arr):
@@ -169,8 +173,8 @@ class GSEMagnetConfig(MagnetConfig):
         :param tor1_arr: array of toroidal coordinates 1
         :return: q
         """
-
-        return self.q_cb(tor1_arr) * self.signma_phi
+        current_sign = self._determine_current_sign()
+        return self.q_cb(tor1_arr) * self.signma_phi * current_sign 
 
 
     def get_Bcontra(self, tor1_arr, tor2_arr, tor3_arr):
@@ -209,7 +213,7 @@ class GSEMagnetConfig(MagnetConfig):
         B_contra[:, :, :, 0] = 0.0
         
         # B^theta = dPsi/dr / J (shape: Nr, Ntheta, Nphi)
-        B_contra[:, :, :, 1] = self.signma_phi * dPsidr / jacobian_det
+        B_contra[:, :, :, 1] = dPsidr / jacobian_det
 
         # B^phi = F/R**2 (shape: Nr, Ntheta, Nphi)
         B_contra[:, :, :, 2] = self.signma_phi * F[:, None, None] / R**2
@@ -230,6 +234,8 @@ class GSEMagnetConfig(MagnetConfig):
         shape_J = (nb_grid_tor1, nb_grid_tor2, nb_grid_tor3, 3)
         J_contra = np.zeros(shape_J, dtype=float)
 
+        current_sign = self._determine_current_sign()
+
         FFprime = (self.FFprime_cb(tor1_arr))[:, None, None]
         F = self.F_cb(tor1_arr)[:, None, None]
         pprime = (self.pprime_cb(tor1_arr))[:, None, None]
@@ -237,9 +243,23 @@ class GSEMagnetConfig(MagnetConfig):
         B_contra = self.get_Bcontra(tor1_arr, tor2_arr, tor3_arr)
         R, _ = self.get_RZ(tor1_arr, tor2_arr, tor3_arr)
 
-        J_contra[..., 1] = -(FFprime / F) * B_contra[..., 1] * self.signma_phi
+        J_contra[..., 1] = -(FFprime / F) * B_contra[..., 1] * current_sign
         
         # J^phi = -(FF'/R^2 + mu0*p')
-        J_contra[..., 2] = -(FFprime / R**2 + pprime) * self.signma_phi
+        J_contra[..., 2] = -(FFprime / R**2 + pprime) * self.signma_phi * current_sign
         
         return J_contra
+
+    def _determine_current_sign(self):
+        """
+        Determine the sign of the plasma current based on the q profile
+        """
+        if self.positive_current:
+            qedge = self.q_cb(self.rmax) * self.signma_phi 
+            if qedge < 0:
+                current_sign = -1
+            else:
+                current_sign = 1
+            return current_sign
+        else:
+            return 1.0

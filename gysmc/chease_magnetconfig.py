@@ -190,15 +190,17 @@ class CHEASEMagnetConfig(GSEMagnetConfig):
         if normalised_units:
             for i in range(num_surfaces-1):
                 plt.plot(R_vals[i], Z_vals[i], 'w-')
-            plt.plot(R_vals_r_one, Z_vals_r_one, 'r--', label='r=1.0')
-            plt.plot(R_vals[-1], Z_vals[-1], 'r-', label='r=max')
+            if self.rmax > 1.0:
+                plt.plot(R_vals_r_one, Z_vals_r_one, 'r--', label='r=1.0')
+            plt.plot(R_vals[-1], Z_vals[-1], 'r-', label=r'$r={:.2f}$'.format(self.rmax))
             plt.xlabel('R/a')
             plt.ylabel('Z/a')
         else:
             for i in range(num_surfaces):
                 plt.plot(R_vals[i]*self.ageo_real, Z_vals[i]*self.ageo_real, 'w-')
-            plt.plot(R_vals_r_one*self.ageo_real, Z_vals_r_one*self.ageo_real, 'r--', label='r=1.0')
-            plt.plot(R_vals[-1]*self.ageo_real, Z_vals[-1]*self.ageo_real, 'r-', label='r=max')
+            if self.rmax > 1.0:
+                plt.plot(R_vals_r_one*self.ageo_real, Z_vals_r_one*self.ageo_real, 'r--', label='r=1.0')
+            plt.plot(R_vals[-1]*self.ageo_real, Z_vals[-1]*self.ageo_real, 'r-', label=r'$r={:.2f}$'.format(self.rmax))
             plt.xlabel('R')
             plt.ylabel('Z')
         plt.title('Flux Surfaces from CHEASE Data')

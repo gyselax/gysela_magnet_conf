@@ -48,7 +48,7 @@ class GEQDSKMagnetConfig(GSEMagnetConfig):
         theta_grid: theta grid used for mapping
     """
 
-    def __init__(self, filename, cocos=2, thetastar=False, psinorm_max=0.95, rmax=1.0, Ninterp=1024, verbose=True):
+    def __init__(self, filename, cocos=2, thetastar=False, psinorm_max=0.95, rmax=1.0, Ninterp=1024, positive_current=False, verbose=True):
         """
         Initialisation of the magnetic configuration
         :param geqdsk_data: GEQDSK data object
@@ -57,6 +57,7 @@ class GEQDSKMagnetConfig(GSEMagnetConfig):
         :param psinorm_max: maximum value of normalized psi
         :param rmax: maximum value of minor radius
         :param Ninterp: number of interpolation points in s and theta
+        :param positive_current: enforcing positive plasma current
         :param verbose: whether to print verbose information
 
         see also set_cocos_convention method for a list of supported cocos conventions
@@ -66,7 +67,7 @@ class GEQDSKMagnetConfig(GSEMagnetConfig):
 
         print("Initialising GEQDSKMagnetConfig from file: {}".format(filename))
 
-        super().__init__(cocos=cocos, verbose=verbose)
+        super().__init__(cocos=cocos, positive_current=positive_current, verbose=verbose)
 
         print("WARNING: r is related to sqrt(poloidal flux), not the geometrical minor radius!")
         print("WARNING: rmax is set at {:.4f}, linked to psinorm_max at {:.4f}".format(rmax, psinorm_max))
@@ -339,15 +340,17 @@ class GEQDSKMagnetConfig(GSEMagnetConfig):
         if normalised_units:
             for i in range(num_surfaces-1):
                 plt.plot(R_vals[i], Z_vals[i], 'w-')
-            plt.plot(R_vals_r_one, Z_vals_r_one, 'r--', label='r=1.0')
-            plt.plot(R_vals[-1], Z_vals[-1], 'r-', label='r=max')
+            if self.rmax > 1.0:
+                plt.plot(R_vals_r_one, Z_vals_r_one, 'r--', label='r=1.0')
+            plt.plot(R_vals[-1], Z_vals[-1], 'r-', label=r'$r={:.2f}$'.format(self.rmax))
             plt.xlabel('R/a')
             plt.ylabel('Z/a')
         else:
             for i in range(num_surfaces):
                 plt.plot(R_vals[i]*self.ageo_real, Z_vals[i]*self.ageo_real, 'w-')
-            plt.plot(R_vals_r_one*self.ageo_real, Z_vals_r_one*self.ageo_real, 'r--', label='r=1.0')
-            plt.plot(R_vals[-1]*self.ageo_real, Z_vals[-1]*self.ageo_real, 'r-', label='r=max')
+            if self.rmax > 1.0:
+                plt.plot(R_vals_r_one*self.ageo_real, Z_vals_r_one*self.ageo_real, 'r--', label='r=1.0')
+            plt.plot(R_vals[-1]*self.ageo_real, Z_vals[-1]*self.ageo_real, 'r-', label=r'$r={:.2f}$'.format(self.rmax))
             plt.xlabel('R')
             plt.ylabel('Z')
         plt.title('Flux Surfaces from GEQDSK Data')
