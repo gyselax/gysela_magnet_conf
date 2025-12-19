@@ -16,7 +16,8 @@ class QProfile():
     Class to initialise the q profile
     """
 
-    def __init__(self, option=2, q_param1=1.0, q_param2=2.7858, q_param3=2.8, q_param4=1.0, read_q=False, q_filename=None, rmax=1.2):
+    def __init__(self, option=2, q_param1=1.0, q_param2=2.7858, q_param3=2.8, q_param4=1.0,
+                 read_q=False, q_filename=None, rmax=1.2, rmin=0.0, number_radial_points=1024):
         """
         Initialisation of the q profile
         :param option: option for q profile
@@ -47,8 +48,8 @@ class QProfile():
         else:
             # the following code was converted from FORTRAN by Copilot
             # Use default grid
-
-            Nr = 1024
+    
+            Nr = number_radial_points
             self.grid_r = np.linspace(0.0, rmax, Nr + 1, True)
             minor_radius = 1.0
             

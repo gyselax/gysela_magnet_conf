@@ -7,7 +7,7 @@ To use, please clone the repository. You can either add the folder to ```PYTHONP
 make install
 ```
 
-Examples are given in the ```examples``` folder. To run the examples please execute:
+Examples are given in the ```examples``` folder. Before running the notebooks in the examples please execute:
 
 
 ```shell

@@ -1,4 +1,4 @@
-.PHONY: install clean example
+.PHONY: install clean example activate
 
 VENV = venv
 PYTHON = $(VENV)/bin/python
@@ -34,6 +34,24 @@ example:
 	else \
 		echo "Example file already exists: $(EXAMPLES_DIR)/g031213.00003"; \
 	fi
+	@if [ ! -f $(EXAMPLES_DIR)/params_gvec_W7X.ini ]; then \
+		echo "Downloading example W7X equilibrium file..."; \
+		curl -L -o $(EXAMPLES_DIR)/params_gvec_W7X.ini https://gitlab.mpcdf.mpg.de/gvec-group/gvec/-/raw/develop/test-CI/examples/w7x/parameter.ini?ref_type=heads; \
+		echo "Downloaded to $(EXAMPLES_DIR)/params_gvec_W7X.ini"; \
+	else \
+		echo "Example file already exists: $(EXAMPLES_DIR)/params_gvec_W7X.ini"; \
+	fi
+
+activate:
+	@if [ ! -d $(VENV) ]; then \
+		echo "Virtual environment not found. Run 'make install' first."; \
+		exit 1; \
+	fi
+	@echo "To activate the virtual environment, run:"
+	@echo "  source $(VENV)/bin/activate"
+	@echo ""
+	@echo "Or use the following command:"
+	@echo "  . $(VENV)/bin/activate"
 
 clean:
 	rm -rf $(VENV)

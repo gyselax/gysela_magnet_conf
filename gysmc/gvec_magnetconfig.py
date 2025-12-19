@@ -12,6 +12,7 @@ import numpy as np
 import tempfile
 from pathlib import Path
 from .magnet_config import MagnetConfig
+import warnings
 
 # Try to import GVEC
 try:
@@ -33,8 +34,8 @@ class GvecMagnetConfig(MagnetConfig):
     """
 
     def __init__(self, major_radius=3, q_profile=None, pressure_profile=None, 
-                 rmax=1.2, beta_toro=0.0, kappa_elongation=1.0, 
-                 delta_triangularity=0.0, r_array=None, runpath=None):
+                 beta_toro=0.0, kappa_elongation=1.0,
+                 delta_triangularity=0.0, runpath=None, r_array=None, max_iter=10000, minimize_tol=1e-6, sgrid_nElems=2, X1X2_deg=5, LA_deg=5):
         """
         Initialize the GVEC equilibrium
         
@@ -44,10 +45,9 @@ class GvecMagnetConfig(MagnetConfig):
             Major radius at magnetic axis
         q_profile : QProfile
             Safety factor profile object with get_q(r) method
+            q_profile.grid_r is used as the radial coordinate array if r_array is None
         pressure_profile : array_like or callable
             Pressure profile p(r) - can be array or object with get_pressure(r) method
-        rmax : float, optional
-            Maximum radial coordinate (default: 1.2)
         beta_toro : float, optional
             Toroidal beta parameter (default: 0.0)
         kappa_elongation : float, optional
@@ -67,18 +67,28 @@ class GvecMagnetConfig(MagnetConfig):
         if q_profile is None:
             from .q_profile import QProfile
             q_profile = QProfile()
+
+        # Check if the q profile is valid (must be between 0 and 1 for gvec)
+        assert min(q_profile.grid_r) >= 0, "It's over, Anakin. min(q_profile.grid_r) must be non-negative"
+        assert max(q_profile.grid_r) <= 1, "It's over, Anakin. max(q_profile.grid_r) must be less than or equal to 1"
         
+        # note that q_profile.grid_r must not be the same as r_array
         if r_array is None:
             # number of internal radial points
-            self.nr = 1024  # Default number of radial points
-            rmin = 0.00001
-            self.r_array = np.linspace(rmin, rmax, self.nr, True)
-        else:
-            self.r_array = np.array(r_array)
-            rmax = self.r_array[-1]
+            r_array = q_profile.grid_r
+        
+        assert min(r_array) >= 0, "It's over, Anakin. min(r_array) must be non-negative"
+        assert max(r_array) <= 1, "It's over, Anakin. max(r_array) must be less than or equal to 1"
+        # note that gvec solves the equilibrium on these r_array points, however the equilibrium can be evaluated later on any 
+        # radial coordinate grid.
+        # Therefore it makes sense to limit the numbers of grid points in r_array that are used to solve the equilibrium. 
+        assert len(r_array) < 200, "It's over, Anakin. if len(r_array) is to large our gvec starship will explode"
+        self.r_array = np.array(r_array)
+        rmax = self.r_array[-1]
         
         self.R0 = major_radius
         self.q_profile_obj = q_profile  # Store QProfile object
+
         self.q_profile, self.dqdr_profile = q_profile.get_q(self.r_array)  # Get q values and derivatives
         self.pressure_profile_obj = pressure_profile
         self.minor_radius = 1.0
@@ -86,6 +96,13 @@ class GvecMagnetConfig(MagnetConfig):
         self.kappa_elongation = kappa_elongation
         self.delta_triangularity = delta_triangularity
         
+        # Minimiser parameters for GVEC
+        self.max_iter = max_iter
+        self.minimize_tol = minimize_tol
+        self.sgrid_nElems = sgrid_nElems
+        self.X1X2_deg = X1X2_deg
+        self.LA_deg = LA_deg
+
         # Get pressure profile
         if self.pressure_profile_obj is None:
             p_profile = np.zeros(len(self.r_array))
@@ -118,6 +135,68 @@ class GvecMagnetConfig(MagnetConfig):
         # Construct splines for efficient interpolation
         self._construct_splines()
 
+    @classmethod
+    def from_params(cls, params, runpath=None, stdout_path=None):
+        """
+        Initialize GVEC equilibrium from a parameters dictionary or .ini file.
+        
+        Parameters:
+        -----------
+        params : dict or str or Path
+            GVEC parameters dictionary or path to a .ini parameter file
+        runpath : str or Path, optional
+            Path for GVEC run directory. If None, uses temporary directory.
+        stdout_path : str or Path, optional
+            Path for GVEC stdout output file. Only used when params is a .ini file.
+            
+        Returns:
+        --------
+        GvecMagnetConfig
+            Initialized GVEC equilibrium configuration
+        """
+        if not GVEC_AVAILABLE:
+            raise ImportError("GVEC is not available. Please install gvec package.")
+        
+        # Create instance
+        instance = cls.__new__(cls)
+        super(GvecMagnetConfig, instance).__init__()
+        instance.runpath = runpath
+        
+        # Handle .ini file
+        if isinstance(params, (str, Path)) and Path(params).suffix.lower() == '.ini':
+            params_path = Path(params)
+            if not params_path.exists():
+                raise FileNotFoundError(f"Parameter file not found: {params_path}")
+            
+            # Prepare runpath
+            if runpath is None:
+                instance._temp_dir = tempfile.TemporaryDirectory()
+                gvec_run_dir = Path(instance._temp_dir.name) / "gvec_run"
+            else:
+                instance._temp_dir = None
+                gvec_run_dir = Path(runpath)
+                gvec_run_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Run GVEC from .ini file
+            print(f"Running GVEC from parameter file: {params_path}")
+            kwargs = {"runpath": str(gvec_run_dir)}
+            if stdout_path is not None:
+                kwargs["stdout_path"] = str(stdout_path)
+            instance.gvec_run = gvec.run(str(params_path), **kwargs)
+            instance.gvec_state = instance.gvec_run.state
+            print("GVEC run successful")
+        else:
+            # params is a dictionary
+            if not isinstance(params, dict):
+                raise TypeError(f"params must be a dictionary or path to .ini file, got {type(params)}")
+            instance._run_gvec(params)
+        
+        # Pre-compute and construct splines
+        instance._precompute_grid_values()
+        instance._construct_splines()
+        
+        return instance
+
     def _create_gvec_parameters(self, p_profile):
         """
         Create GVEC parameters dictionary from the given parameters.
@@ -141,15 +220,17 @@ class GvecMagnetConfig(MagnetConfig):
         iota_profile = 1.0 / self.q_profile
         # Avoid division by zero
         iota_profile = np.where(np.isfinite(iota_profile), iota_profile, 0.0)
+        
         params["iota"] = {
             "type": "interpolation",
-            "rho2": self.r_array**2,
+            "rho2": self.r_array,
             "vals": iota_profile,
         }
+
         # Pressure profile
         params["pres"] = {
             "type": "interpolation",
-            "rho2": self.r_array**2,
+            "rho2": self.r_array,
             "vals": p_profile,
         }
         
@@ -185,13 +266,13 @@ class GvecMagnetConfig(MagnetConfig):
         params["X2_mn_max"] = [2, 0]  # maximum Fourier modes for X2
         params["LA_mn_max"] = [2, 0]  # maximum Fourier modes for LA
         
-        params["sgrid_nElems"] = 2  # number of radial B-spline elements
-        params["X1X2_deg"] = 5  # degree of B-splines for X1 and X2
-        params["LA_deg"] = 5  # degree of B-splines for LA
+        params["sgrid_nElems"] = self.sgrid_nElems  # number of radial B-spline elements
+        params["X1X2_deg"] = self.X1X2_deg  # degree of B-splines for X1 and X2
+        params["LA_deg"] = self.LA_deg  # degree of B-splines for LA
         
         # Minimiser parameters
-        params["totalIter"] = 10000  # maximum number of iterations
-        params["minimize_tol"] = 1e-6  # stopping tolerance
+        params["totalIter"] = self.max_iter  # maximum number of iterations
+        params["minimize_tol"] = self.minimize_tol  # stopping tolerance
         
         return params
 
@@ -228,10 +309,19 @@ class GvecMagnetConfig(MagnetConfig):
         """
         Pre-compute values on the r_array grid for efficient interpolation.
         """
+        # Extract r_array from state if not already set
+        if not hasattr(self, 'r_array') or self.r_array is None:
+            try:
+                ev_test = self.gvec_state.evaluate("iota", rho="int", theta=[0.0], zeta=[0.0])
+                self.r_array = np.array(ev_test.rho.values)
+            except:
+                # Fallback to default grid
+                self.r_array = np.linspace(0.01, 1.0, 64)
+        
         # Create evaluation points
         rho = self.r_array.copy()
         if rho[0] == 0.0:
-            rho[0] = 1e-15
+            rho[0] = 1e-13
         
         # Use a single theta and zeta value for radial profiles
         theta = np.array([0.0])
@@ -259,9 +349,8 @@ class GvecMagnetConfig(MagnetConfig):
         )
         
         # Store radial profiles (extract first theta/zeta slice)
-        self.dPsidr_r = ev.dPhi_dr.values[:, 0, 0]
-        self.iota_r = ev.iota.values[:, 0, 0]
-        self.current_r = ev.I_tor.values[:, 0, 0]
+        self.dPsidr_r = ev.dPhi_dr.values[:]
+        self.current_r = ev.I_tor.values[:]
         self.B0 = ev.mod_B.values[0, 0, 0]  # Reference B field
         
         # Store metric tensor components
@@ -285,7 +374,6 @@ class GvecMagnetConfig(MagnetConfig):
         # Create splines for all profiles
         self.spline_Psi = CubicSpline(self.r_array, self.Psi_r, bc_type='natural')
         self.spline_dPsidr = CubicSpline(self.r_array, self.dPsidr_r, bc_type='natural')
-        self.spline_iota = CubicSpline(self.r_array, self.iota_r, bc_type='natural')
         self.spline_current = CubicSpline(self.r_array, self.current_r, bc_type='natural')
         self.spline_g_rr = CubicSpline(self.r_array, self.g_rr_r, bc_type='natural')
         self.spline_g_rt = CubicSpline(self.r_array, self.g_rt_r, bc_type='natural')
@@ -316,7 +404,7 @@ class GvecMagnetConfig(MagnetConfig):
         """
         # Ensure rho doesn't have zeros
         rho = np.asarray(rho).copy()
-        rho[rho == 0.0] = 1e-15
+        rho[rho == 0.0] = 1e-13
         
         ev = self.gvec_state.evaluate(*quantities, rho=rho, theta=theta, zeta=zeta)
         return ev
@@ -354,7 +442,7 @@ class GvecMagnetConfig(MagnetConfig):
         # Prepare coordinates for GVEC evaluation
         rho = tor1_arr.copy()
         if rho[0] == 0.0:
-            rho[0] = 1e-15
+            rho[0] = 1e-13
         
         theta = tor2_arr
         zeta = np.array([0.0]) if nb_grid_tor3 == 1 else np.asarray(tor3_arr)
@@ -414,7 +502,7 @@ class GvecMagnetConfig(MagnetConfig):
         # Prepare coordinates for GVEC evaluation
         rho = tor1_arr.copy()
         if rho[0] == 0.0:
-            rho[0] = 1e-15
+            rho[0] = 1e-13
         
         theta = tor2_arr
         zeta = np.array([0.0]) if nb_grid_tor3 == 1 else np.asarray(tor3_arr)
@@ -430,8 +518,6 @@ class GvecMagnetConfig(MagnetConfig):
         g_tz = ev.g_tz.values
         g_zz = ev.g_zz.values
         
-        # Get R coordinates for g33 component
-        R_coord, _ = self.get_RZ(tor1_arr, tor2_arr, tor3_arr)
         
         # Fill covariant metric tensor
         # GVEC uses (rho, theta, zeta) coordinates which map to (r, theta, phi)
@@ -495,7 +581,8 @@ class GvecMagnetConfig(MagnetConfig):
         array : q profile
         """
         # Convert from iota: q = 1/iota
-        iota_values = self.spline_iota(tor1_arr)
+        ev = self._evaluate_gvec(np.asarray(tor1_arr), np.array([0.0]), np.array([0.0]), ["iota"])
+        iota_values = ev.iota.values[:]
         q_values = np.where(np.abs(iota_values) > 1e-12, 1.0 / iota_values, np.inf)
         return q_values
 
@@ -535,7 +622,7 @@ class GvecMagnetConfig(MagnetConfig):
         # Prepare coordinates for GVEC evaluation
         rho = tor1_arr.copy()
         if rho[0] == 0.0:
-            rho[0] = 1e-15
+            rho[0] = 1e-13
         
         theta = tor2_arr
         zeta = np.array([0.0]) if nb_grid_tor3 == 1 else np.asarray(tor3_arr)
@@ -589,7 +676,7 @@ class GvecMagnetConfig(MagnetConfig):
         # Get current profile (I_tor) from GVEC
         rho = tor1_arr.copy()
         if rho[0] == 0.0:
-            rho[0] = 1e-15
+            rho[0] = 1e-13
         
         # Evaluate current at grid points
         theta = tor2_arr
@@ -629,6 +716,20 @@ class GvecMagnetConfig(MagnetConfig):
                     J_contra[i, j, k, 2] = -(dIdr * B_contra[i, j, k, 2]) / dpsidr
         
         return J_contra
+
+    def get_params(self):
+        """
+        Get the GVEC parameters dictionary used to create this equilibrium.
+        
+        Returns:
+        --------
+        dict
+            GVEC parameters dictionary, or None if not available
+        """
+        if hasattr(self, 'gvec_run') and hasattr(self.gvec_run, 'params'):
+            return self.gvec_run.params
+        return None
+        
 
     def __del__(self):
         """
