@@ -7,11 +7,20 @@ We currently support:
 - Culham geometry
 - CHEASE
 - GEQDSK file
+- GVEC
 
 To use, please clone the repository. You can either add the folder to ```PYTHONPATH``` or install it using
 
-```python
-pip install -e .
+```shell
+make install
 ```
 
-Examples are given in the ```examples``` folder.
+Examples are given in the ```examples``` folder. Before running the notebooks in the examples please execute:
+
+
+```shell
+make install
+make example
+```
+
+This will download the necessary input files for the magnetic configurations that are needed in the examples.
