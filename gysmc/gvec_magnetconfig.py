@@ -13,6 +13,7 @@ import tempfile
 from pathlib import Path
 from .magnet_config import MagnetConfig
 import warnings
+import matplotlib.pyplot as plt
 
 # Try to import GVEC
 try:
@@ -35,7 +36,7 @@ class GvecMagnetConfig(MagnetConfig):
 
     def __init__(self, major_radius=3, q_profile=None, pressure_profile=None, 
                  beta_toro=0.0, kappa_elongation=1.0,
-                 delta_triangularity=0.0, runpath=None, r_array=None, max_iter=10000, minimize_tol=1e-6, sgrid_nElems=2, X1X2_deg=5, LA_deg=5):
+                 delta_triangularity=0.0, runpath=None, r_array=None, max_iter=10000, minimize_tol=1e-6, sgrid_nElems=2, X1X2_deg=5, LA_deg=5, rho_min=1e-13):
         """
         Initialize the GVEC equilibrium
         
@@ -58,6 +59,8 @@ class GvecMagnetConfig(MagnetConfig):
             The radial coordinate array. If None, a default grid will be created.
         runpath : str or Path, optional
             Path for GVEC run directory. If None, uses temporary directory.
+        rho_min : float, optional
+            Minimum value for rho coordinate to avoid numerical issues at rho=0 (default: 1e-13)
         """
         super().__init__()
         
@@ -102,6 +105,9 @@ class GvecMagnetConfig(MagnetConfig):
         self.sgrid_nElems = sgrid_nElems
         self.X1X2_deg = X1X2_deg
         self.LA_deg = LA_deg
+        
+        # Numerical parameter for avoiding rho=0
+        self.rho_min = rho_min
 
         # Get pressure profile
         if self.pressure_profile_obj is None:
@@ -124,6 +130,9 @@ class GvecMagnetConfig(MagnetConfig):
         
         # Create GVEC parameters
         params = self._create_gvec_parameters(p_profile)
+        
+        # Store params as class attribute
+        self.params = params
         
         # Run GVEC
         self.runpath = runpath
@@ -161,6 +170,7 @@ class GvecMagnetConfig(MagnetConfig):
         instance = cls.__new__(cls)
         super(GvecMagnetConfig, instance).__init__()
         instance.runpath = runpath
+        instance.rho_min = 1e-13  # Default value for rho_min
         
         # Handle .ini file
         if isinstance(params, (str, Path)) and Path(params).suffix.lower() == '.ini':
@@ -189,6 +199,8 @@ class GvecMagnetConfig(MagnetConfig):
             # params is a dictionary
             if not isinstance(params, dict):
                 raise TypeError(f"params must be a dictionary or path to .ini file, got {type(params)}")
+            # Store params as class attribute
+            instance.params = params
             instance._run_gvec(params)
         
         # Pre-compute and construct splines
@@ -321,7 +333,7 @@ class GvecMagnetConfig(MagnetConfig):
         # Create evaluation points
         rho = self.r_array.copy()
         if rho[0] == 0.0:
-            rho[0] = 1e-13
+            rho[0] = self.rho_min
         
         # Use a single theta and zeta value for radial profiles
         theta = np.array([0.0])
@@ -404,7 +416,7 @@ class GvecMagnetConfig(MagnetConfig):
         """
         # Ensure rho doesn't have zeros
         rho = np.asarray(rho).copy()
-        rho[rho == 0.0] = 1e-13
+        rho[rho == 0.0] = self.rho_min
         
         ev = self.gvec_state.evaluate(*quantities, rho=rho, theta=theta, zeta=zeta)
         return ev
@@ -442,7 +454,7 @@ class GvecMagnetConfig(MagnetConfig):
         # Prepare coordinates for GVEC evaluation
         rho = tor1_arr.copy()
         if rho[0] == 0.0:
-            rho[0] = 1e-13
+            rho[0] = self.rho_min
         
         theta = tor2_arr
         zeta = np.array([0.0]) if nb_grid_tor3 == 1 else np.asarray(tor3_arr)
@@ -502,7 +514,7 @@ class GvecMagnetConfig(MagnetConfig):
         # Prepare coordinates for GVEC evaluation
         rho = tor1_arr.copy()
         if rho[0] == 0.0:
-            rho[0] = 1e-13
+            rho[0] = self.rho_min
         
         theta = tor2_arr
         zeta = np.array([0.0]) if nb_grid_tor3 == 1 else np.asarray(tor3_arr)
@@ -622,7 +634,7 @@ class GvecMagnetConfig(MagnetConfig):
         # Prepare coordinates for GVEC evaluation
         rho = tor1_arr.copy()
         if rho[0] == 0.0:
-            rho[0] = 1e-13
+            rho[0] = self.rho_min
         
         theta = tor2_arr
         zeta = np.array([0.0]) if nb_grid_tor3 == 1 else np.asarray(tor3_arr)
@@ -676,7 +688,7 @@ class GvecMagnetConfig(MagnetConfig):
         # Get current profile (I_tor) from GVEC
         rho = tor1_arr.copy()
         if rho[0] == 0.0:
-            rho[0] = 1e-13
+            rho[0] = self.rho_min
         
         # Evaluate current at grid points
         theta = tor2_arr
@@ -726,10 +738,144 @@ class GvecMagnetConfig(MagnetConfig):
         dict
             GVEC parameters dictionary, or None if not available
         """
-        if hasattr(self, 'gvec_run') and hasattr(self.gvec_run, 'params'):
-            return self.gvec_run.params
+        if hasattr(self, 'params'):
+            return self.params
         return None
         
+
+    def plot_geometry(self, N_surf=16, N_theta=32, N_toroidal_plots=3, Nr=128, Ntheta=128):
+        """
+        Plot the geometry of the magnetic configuration
+        
+        Parameters:
+        -----------
+        N_surf : int, optional
+            Number of magnetic surfaces to plot (default: 16)
+        N_theta : int, optional
+            Number of poloidal angles to plot (default: 32)
+        N_toroidal_plots : int, optional
+            Number of toroidal plots to make (default: 3)
+        Nr : int, optional
+            Number of radial grid points for plotting (default: 128)
+        Ntheta : int, optional
+            Number of poloidal grid points for plotting (default: 128)
+        """
+        # Create coordinate grids for plotting
+        tor1 = np.linspace(self.rho_min, 1, Nr)
+        tor2 = np.linspace(0.0, 2.0 * np.pi, Ntheta)
+        
+        # Create toroidal coordinate array
+        if N_toroidal_plots > 1:
+            tor3 = np.linspace(0.0, 2.0 * np.pi, N_toroidal_plots)
+        else:
+            tor3 = np.array([0.0])
+        
+        # Compute R and Z coordinates
+        R_coord, Z_coord = self.get_RZ(tor1, tor2, tor3)
+        
+        nb_grid_tor1 = len(tor1)
+        nb_grid_tor2 = len(tor2)
+        nb_grid_tor3 = len(tor3)
+        
+        delta_Nr = nb_grid_tor1 // N_surf
+        delta_Ntheta = nb_grid_tor2 // N_theta
+        delta_Nphi = nb_grid_tor3 // N_toroidal_plots if nb_grid_tor3 > 1 else 1
+
+        # Create an array of surface indices
+        surface_indices = (np.arange(1, N_surf) * delta_Nr)
+        surface_indices_theta = (np.arange(0, N_theta) * delta_Ntheta)
+
+        # Create separate figures for each toroidal plot
+        for plot_idx in range(N_toroidal_plots):
+            if N_toroidal_plots > 1:
+                plt.figure(figsize=(8, 8))
+                iphi = plot_idx * delta_Nphi
+            else:
+                iphi = 0
+            
+            # Plot magnetic surfaces
+            for i in surface_indices:
+                plt.plot(R_coord[i, :, iphi], Z_coord[i, :, iphi], 'k-', linewidth=0.5)
+            
+            # Plot outermost surface in red
+            plt.plot(R_coord[-1, :, iphi], Z_coord[-1, :, iphi], 'r-', linewidth=1.5)
+
+            # Plot poloidal field lines
+            for i in surface_indices_theta:
+                plt.plot(R_coord[:, i, iphi], Z_coord[:, i, iphi], 'k-', linewidth=0.5, alpha=0.5)
+
+            plt.axis('equal')
+            plt.xlabel('R')
+            plt.ylabel('Z')
+            if N_toroidal_plots > 1:
+                plt.title(f'Magnetic geometry (φ = {tor3[iphi]:.2f})')
+            else:
+                plt.title('Magnetic geometry')
+            plt.grid(True, alpha=0.3)
+        
+        plt.show()
+
+    def plot_3D(self, Nr=50, Ntheta=90, Nzeta=93):
+        """
+        Create a 3D plot of the magnetic configuration.
+        
+        Parameters:
+        -----------
+        Nr : int, optional
+            Number of radial grid points (default: 50)
+        Ntheta : int, optional
+            Number of poloidal grid points (default: 90)
+        Nzeta : int, optional
+            Number of toroidal grid points (default: 93)
+        """
+        from mpl_toolkits.mplot3d import Axes3D
+        
+        # Create coordinate grids
+        rho_3d = np.linspace(self.rho_min, 1.0, Nr)
+        theta_3d = np.linspace(0, 2*np.pi, Ntheta)
+        zeta_3d = np.linspace(0, 2*np.pi/2, Nzeta)
+        
+        # Evaluate position vectors
+        ev_surface = self._evaluate_gvec(rho_3d, theta_3d, zeta_3d, ["pos"])
+        x, y, z = np.asarray(ev_surface.pos)
+        
+        # Evaluate magnetic axis
+        rho_axis = np.array([self.rho_min])
+        zeta_axis = np.linspace(0, 2*np.pi, 133)
+        ev_axis = self._evaluate_gvec(rho_axis, np.array([0.0]), zeta_axis, ["pos"])
+        x_axis, y_axis, z_axis = np.asarray(ev_axis.pos)
+        
+        
+        # Create 3D plot
+        fig = plt.figure(figsize=(10, 10))
+        ax = fig.add_subplot(111, projection="3d")
+        
+        # Plot boundary surface
+        ax.plot_surface(x[-1, :, :], y[-1, :, :], z[-1, :, :], alpha=0.7, color="blue")
+        
+        # Plot surface in center
+        zeta_3d = np.linspace(-0.2*np.pi, 2*np.pi/1.8, 33)
+        ev_mid = self._evaluate_gvec( rho_3d, theta_3d, zeta_3d, ["pos"])
+        xmid, ymid, zmid = np.asarray(ev_mid.pos)
+        mid_idx = np.argmin(np.abs(rho_3d - 0.5))
+        ax.plot_surface(xmid[mid_idx, :, :], ymid[mid_idx, :, :], zmid[mid_idx, :, :], alpha=0.3, color="red")
+
+        # Plot boundary cuts
+        for iz in range(0, z.shape[2], 4):
+            ax.plot3D(x[-1, :, iz], y[-1, :, iz], z[-1, :, iz], color="k", linewidth=1)
+        
+        # Plot magnetic axis
+        ax.plot3D(x_axis, y_axis, z_axis, color="green", linewidth=2)
+        
+        ax.set_xlabel('X')
+        ax.set_ylabel('Y')
+        ax.set_zlabel('Z')
+        ax.set_title('3D Magnetic Configuration')
+        ax.set(aspect="equal")
+        ax.view_init(25, 140, 0)
+        
+        plt.tight_layout()
+        plt.show()
 
     def __del__(self):
         """
