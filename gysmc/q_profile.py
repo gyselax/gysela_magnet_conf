@@ -20,7 +20,9 @@ class QProfile():
                  read_q=False, q_filename=None, rmax=1.2, rmin=0.0, number_radial_points=1024):
         """
         Initialisation of the q profile
-        :param option: option for q profile
+        :param option: option for q profile (int or str). 
+                       Can be: 0 or "infinity", 1 or "flat", 2 or "parabolic", 
+                       3 or "reversed shear", 4 or "cyclone"/"cycone", 5 or "wesson"
         :param q_param1,q_param2,q_param3,q_param4: parameter for q profile
         :param read_q: file to read q profile from, if None, use analytical profile
         :param q_filename: file to load q profile
@@ -29,6 +31,26 @@ class QProfile():
         from scipy.interpolate import CubicSpline
         import os
 
+        # Map string options to numeric options
+        option_map = {
+            "infinity": 0,
+            "flat": 1,
+            "parabolic": 2,
+            "reversed shear": 3,
+            "cyclone": 4,
+            "cycone": 4,  # Support both spellings
+            "wesson": 5
+        }
+        
+        # Convert string option to number if needed
+        if isinstance(option, str):
+            option_lower = option.lower().strip()
+            if option_lower in option_map:
+                option = option_map[option_lower]
+            else:
+                raise ValueError(f"Unknown q_profile option '{option}'. "
+                               f"Valid options are: {list(option_map.keys())} or integers 0-5")
+        
         self.option = option
         self.q_param1 = q_param1
         self.q_param2 = q_param2
@@ -73,7 +95,7 @@ class QProfile():
                     else:
                         qr_tmp = 0
                     self.q_r[ir] = q_param1 + qr_tmp
-                    
+      
             elif option == 3:
                 # Reversed shear, Garbet et al. PoP2001 version
                 rhomin2 = q_param4 ** 2

@@ -14,6 +14,7 @@ from pathlib import Path
 from .magnet_config import MagnetConfig
 import warnings
 import matplotlib.pyplot as plt
+import xarray as xr
 
 # Try to import GVEC
 try:
@@ -113,20 +114,7 @@ class GvecMagnetConfig(MagnetConfig):
         if self.pressure_profile_obj is None:
             p_profile = np.zeros(len(self.r_array))
         else:
-            if hasattr(self.pressure_profile_obj, 'get_pressure'):
-                p_profile, _ = self.pressure_profile_obj.get_pressure(self.r_array)
-            elif callable(self.pressure_profile_obj):
-                p_profile = self.pressure_profile_obj(self.r_array)
-            else:
-                p_profile = np.asarray(self.pressure_profile_obj)
-                if len(p_profile) != len(self.r_array):
-                    # Interpolate if needed
-                    from scipy.interpolate import interp1d
-                    p_interp = interp1d(np.linspace(0, rmax, len(p_profile)), p_profile, 
-                                       bounds_error=False, fill_value=0.0)
-                    p_profile = p_interp(self.r_array)
-            
-            p_profile *= self.beta_toro
+            p_profile, _ = self.pressure_profile_obj.get_pressure(self.r_array)
         
         # Create GVEC parameters
         params = self._create_gvec_parameters(p_profile)
@@ -235,14 +223,14 @@ class GvecMagnetConfig(MagnetConfig):
         
         params["iota"] = {
             "type": "interpolation",
-            "rho2": self.r_array,
+            "rho2": self.r_array**2,
             "vals": iota_profile,
         }
 
         # Pressure profile
         params["pres"] = {
             "type": "interpolation",
-            "rho2": self.r_array,
+            "rho2": self.r_array**2,
             "vals": p_profile,
         }
         
@@ -657,6 +645,177 @@ class GvecMagnetConfig(MagnetConfig):
         B_contra[:, :, :, 2] = B_contra_z  # Toroidal component
         
         return B_contra
+
+    def to_gyselaX(self, tor1_arr, tor2_arr, tor3_arr):
+        """
+        Convert the magnetic configuration to a GyselaX dataset.
+        
+        This function creates ds_gvec_geometry and ds_magnetconf datasets
+        compatible with the GyselaX initialization format.
+        
+        Parameters:
+        -----------
+        tor1_arr : array_like
+            Radial coordinates (r) - 1D array
+        tor2_arr : array_like
+            Poloidal coordinates (theta) - 1D array
+        tor3_arr : array_like or None
+            Toroidal coordinates (phi) - 1D array or None for 2D case
+            
+        Returns:
+        --------
+        tuple : (ds_gvec_geometry, ds_magnetconf)
+            Two xarray.Dataset objects containing geometry and magnetic field data
+        """
+        # Ensure inputs are arrays
+        tor1_arr = np.asarray(tor1_arr)
+        tor2_arr = np.asarray(tor2_arr)
+        
+        # Validate that r and theta are 1D
+        if tor1_arr.ndim != 1 or tor2_arr.ndim != 1:
+            raise ValueError("tor1_arr (r) and tor2_arr (theta) must be 1D arrays")
+        
+        nb_grid_tor1 = len(tor1_arr)
+        nb_grid_tor2 = len(tor2_arr)
+        # Handle None case for tor3_arr (convert to array for get_RZ)
+        if tor3_arr is None:
+            tor3_arr_for_eval = np.array([0.0])
+            nb_grid_tor3 = 1
+        else:
+            tor3_arr_for_eval = tor3_arr
+            nb_grid_tor3 = np.size(tor3_arr)
+        
+        # Get R and Z coordinates
+        R_coord, Z_coord = self.get_RZ(tor1_arr, tor2_arr, tor3_arr_for_eval)
+        
+        # Get metric tensors (returns shape: (Nr, Ntheta, Nphi, 3, 3))
+        ContravariantMetricTensor_gij, CovariantMetricTensor_gij = self.get_gij(tor1_arr, tor2_arr, tor3_arr_for_eval)
+        
+        # Transpose to match init_gvec_geometry format: (3, 3, Nr, Ntheta, Nphi)
+        CovariantMetricTensor = np.transpose(CovariantMetricTensor_gij, (3, 4, 0, 1, 2))
+        ContravariantMetricTensor = np.transpose(ContravariantMetricTensor_gij, (3, 4, 0, 1, 2))
+        
+        # Get B field (returns shape: (Nr, Ntheta, Nphi, 3))
+        B_contra_gij = self.get_Bcontra(tor1_arr, tor2_arr, tor3_arr_for_eval)
+        
+        # Transpose to match init_gvec_geometry format: (3, Nr, Ntheta, Nphi)
+        B_contra = np.transpose(B_contra_gij, (3, 0, 1, 2))
+        
+        # Get B_norm by evaluating mod_B at grid points
+        rho = tor1_arr.copy()
+        if rho[0] == 0.0:
+            rho[0] = self.rho_min
+        
+        theta = tor2_arr
+        zeta = np.array([0.0]) if nb_grid_tor3 == 1 else np.asarray(tor3_arr_for_eval)
+        
+        ev = self._evaluate_gvec(rho, theta, zeta, ["mod_B", "dPhi_dr", "I_tor"])
+        
+        B_norm = ev.mod_B.values
+        # Extract B0 from first point (r=0 or r_min, theta=0, zeta=0)
+        B0 = B_norm[0, 0, 0]
+        B_norm = B_norm / B0
+        
+        # Extract radial profiles (dPhi_dr and I_tor are flux-surface quantities)
+        # Take first slice along theta and phi (they should be constant along these)
+        dPhi_dr = ev.dPhi_dr.values
+        current_tor1 = ev.I_tor.values
+        
+        # Extract 1D radial profiles (take first slice along theta and phi)
+        if dPhi_dr.ndim > 1:
+            dPhi_dr = dPhi_dr[:, 0, 0]
+        if current_tor1.ndim > 1:
+            current_tor1 = current_tor1[:, 0, 0]
+        
+        # Handle squeezing when nb_grid_tor3 == 1 (similar to init_gvec_geometry)
+        if nb_grid_tor3 == 1:
+            R_coord = R_coord.squeeze()
+            Z_coord = Z_coord.squeeze()
+            B_contra = B_contra.squeeze()
+            B_norm = B_norm.squeeze()
+            ContravariantMetricTensor = ContravariantMetricTensor.squeeze()
+            CovariantMetricTensor = CovariantMetricTensor.squeeze()
+        
+        # Determine toroidal coordinates
+        tor_coord = ["tor1", "tor2", "tor3"] if tor3_arr is not None else ["tor1", "tor2"]
+        metric_array = list(range(3))
+        metric_coord = ["metric1", "metric2"] + tor_coord
+        
+        # Create coordinate dictionary
+        coords_dict = {"tor1": tor1_arr, "tor2": tor2_arr}
+        if tor3_arr is not None:
+            # Use original tor3_arr for coordinates (not the evaluation version)
+            if np.size(tor3_arr) > 1:
+                coords_dict["tor3"] = np.asarray(tor3_arr)
+            else:
+                coords_dict["tor3"] = np.array([tor3_arr]) if not isinstance(tor3_arr, np.ndarray) else tor3_arr
+        
+        # Create ds_gvec_geometry
+        ds_gvec_geometry = xr.Dataset(
+            data_vars={
+                "R0": ((), self.R0),
+                "kappa": ((), self.kappa_elongation),
+                "delta": ((), self.delta_triangularity),
+                "beta": ((), self.beta_toro),
+            },
+            coords=coords_dict,
+        )
+        
+        # Save R and Z coordinates
+        ds_gvec_geometry = ds_gvec_geometry.assign(R_coord=(tor_coord, R_coord))
+        ds_gvec_geometry = ds_gvec_geometry.assign(Z_coord=(tor_coord, Z_coord))
+        
+        # Save metric tensors
+        ds_gvec_geometry = ds_gvec_geometry.assign_coords(metric1=("metric1", metric_array))
+        ds_gvec_geometry = ds_gvec_geometry.assign_coords(metric2=("metric2", metric_array))
+        ds_gvec_geometry = ds_gvec_geometry.assign(
+            CovariantMetricTensor=(
+                metric_coord,
+                CovariantMetricTensor[: len(metric_array), : len(metric_array), ...],
+            )
+        )
+        ds_gvec_geometry = ds_gvec_geometry.assign(
+            ContravariantMetricTensor=(
+                metric_coord,
+                ContravariantMetricTensor[: len(metric_array), : len(metric_array), ...],
+            )
+        )
+        
+        # Individual metric tensor components for compatibility
+        ds_gvec_geometry = ds_gvec_geometry.assign(CovariantMetricTensor_11=(tor_coord, CovariantMetricTensor[0, 0, ...]))
+        ds_gvec_geometry = ds_gvec_geometry.assign(CovariantMetricTensor_12=(tor_coord, CovariantMetricTensor[0, 1, ...]))
+        ds_gvec_geometry = ds_gvec_geometry.assign(CovariantMetricTensor_21=(tor_coord, CovariantMetricTensor[1, 0, ...]))
+        ds_gvec_geometry = ds_gvec_geometry.assign(CovariantMetricTensor_22=(tor_coord, CovariantMetricTensor[1, 1, ...]))
+        ds_gvec_geometry = ds_gvec_geometry.assign(CovariantMetricTensor_33=(tor_coord, CovariantMetricTensor[2, 2, ...]))
+        ds_gvec_geometry = ds_gvec_geometry.assign(
+            ContravariantMetricTensor_11=(tor_coord, ContravariantMetricTensor[0, 0, ...])
+        )
+        ds_gvec_geometry = ds_gvec_geometry.assign(
+            ContravariantMetricTensor_12=(tor_coord, ContravariantMetricTensor[0, 1, ...])
+        )
+        ds_gvec_geometry = ds_gvec_geometry.assign(
+            ContravariantMetricTensor_21=(tor_coord, ContravariantMetricTensor[1, 0, ...])
+        )
+        ds_gvec_geometry = ds_gvec_geometry.assign(
+            ContravariantMetricTensor_22=(tor_coord, ContravariantMetricTensor[1, 1, ...])
+        )
+        ds_gvec_geometry = ds_gvec_geometry.assign(
+            ContravariantMetricTensor_33=(tor_coord, ContravariantMetricTensor[2, 2, ...])
+        )
+        
+        # Initialisation of the magnetic field
+        ds_magnetconf = ds_gvec_geometry[tor_coord].copy()
+        ds_magnetconf = ds_magnetconf.assign(dPsidr_tor1=("tor1", dPhi_dr))
+        ds_magnetconf = ds_magnetconf.assign(current_tor1=("tor1", current_tor1))
+        ds_magnetconf = ds_magnetconf.assign(B_contra=(["metric1"] + tor_coord, B_contra))
+        
+        # Extract individual B components (ellipsis handles both 2D and 3D cases)
+        ds_magnetconf = ds_magnetconf.assign(B_tor1_contra=(tor_coord, B_contra[0, ...]))
+        ds_magnetconf = ds_magnetconf.assign(B_tor2_contra=(tor_coord, B_contra[1, ...]))
+        ds_magnetconf = ds_magnetconf.assign(B_tor3_contra=(tor_coord, B_contra[2, ...]))
+        ds_magnetconf = ds_magnetconf.assign(B_norm=(tor_coord, B_norm))
+        
+        return ds_gvec_geometry, ds_magnetconf
 
     def get_Jcontra(self, tor1_arr, tor2_arr, tor3_arr):
         """

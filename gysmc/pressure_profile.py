@@ -511,3 +511,47 @@ class PressureProfile():
             dPdr += dPdr_spec
 
         return total_pressure, dPdr
+
+    @classmethod
+    def from_ds_radialprofiles(cls, ds_radialprofiles):
+        """
+        Create a PressureProfile from ds_radialprofiles Dataset
+        Similar to QProfile but reads pressure_tor1 and tor1 from ds_radialprofiles
+        
+        :param ds_radialprofiles: xarray Dataset containing pressure_tor1 and tor1 coordinates
+        :return: PressureProfile instance with get_pressure method
+        """
+        from scipy.interpolate import CubicSpline
+        
+        # Extract pressure_tor1 and tor1 values from ds_radialprofiles
+        if "pressure_tor1" not in ds_radialprofiles.data_vars:
+            raise ValueError("pressure_tor1 not found in ds_radialprofiles")
+        if "tor1" not in ds_radialprofiles.coords:
+            raise ValueError("tor1 coordinate not found in ds_radialprofiles")
+
+        tor1 = ds_radialprofiles.coords["tor1"].values
+        pressure_tor1 = ds_radialprofiles["pressure_tor1"].values
+
+        # Create a simple wrapper class instance
+        instance = cls.__new__(cls)
+        
+        # Store the spline interpolation
+        spline = CubicSpline(tor1, pressure_tor1, bc_type='natural')
+        instance.spline = spline
+        instance.tor1 = tor1
+        instance.pressure_tor1 = pressure_tor1
+        
+        # Override get_pressure to use the spline interpolation
+        def get_pressure(tor1_arr):
+            """
+            Create the pressure profile from toroidal coordinate 1
+            :param tor1_arr: array of toroidal coordinates 1
+            :return: pressure, dpdr
+            """
+            pprof = spline(tor1_arr)
+            dpdr = spline(tor1_arr, nu=1)  # First derivative
+            return pprof, dpdr
+        
+        instance.get_pressure = get_pressure
+        
+        return instance

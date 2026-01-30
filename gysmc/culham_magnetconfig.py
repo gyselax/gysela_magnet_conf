@@ -9,6 +9,7 @@ Created on 2025-11-05
 """
 
 import numpy as np
+import xarray as xr
 from .magnet_config import MagnetConfig
 
 
@@ -78,7 +79,7 @@ class CulhamMagnetConfig(MagnetConfig):
         else:
             self.r_array = np.array(r_array)
             rmax = self.r_array[-1]
-
+        
         self.thetastar = thetastar
         self.R0 = major_radius
         self.q_profile_obj = q_profile  # Store QProfile object
@@ -1222,3 +1223,170 @@ class CulhamMagnetConfig(MagnetConfig):
                                            pressterm_prime_pos) / dpsidr
         
         return J_contra
+
+    def to_gyselaX(self, tor1_arr, tor2_arr, tor3_arr):
+        """
+        Convert the magnetic configuration to a GyselaX dataset.
+        
+        This function creates ds_gvec_geometry and ds_magnetconf datasets
+        compatible with the GyselaX initialization format.
+        
+        Parameters:
+        -----------
+        tor1_arr : array_like
+            Radial coordinates (r) - 1D array
+        tor2_arr : array_like
+            Poloidal coordinates (theta) - 1D array
+        tor3_arr : array_like or None
+            Toroidal coordinates (phi) - 1D array or None for 2D case
+            
+        Returns:
+        --------
+        tuple : (ds_gvec_geometry, ds_magnetconf)
+            Two xarray.Dataset objects containing geometry and magnetic field data
+        """
+        # Ensure inputs are arrays
+        tor1_arr = np.asarray(tor1_arr)
+        tor2_arr = np.asarray(tor2_arr)
+        
+        # Validate that r and theta are 1D
+        if tor1_arr.ndim != 1 or tor2_arr.ndim != 1:
+            raise ValueError("tor1_arr (r) and tor2_arr (theta) must be 1D arrays")
+        
+        nb_grid_tor1 = len(tor1_arr)
+        nb_grid_tor2 = len(tor2_arr)
+        # Handle None case for tor3_arr (convert to array for get_RZ)
+        if tor3_arr is None:
+            tor3_arr_for_eval = np.array([0.0])
+            nb_grid_tor3 = 1
+        else:
+            tor3_arr_for_eval = tor3_arr
+            nb_grid_tor3 = np.size(tor3_arr)
+        
+        # Get R and Z coordinates
+        R_coord, Z_coord = self.get_RZ(tor1_arr, tor2_arr, tor3_arr_for_eval)
+        
+        # Get metric tensors (returns shape: (Nr, Ntheta, Nphi, 3, 3))
+        ContravariantMetricTensor_gij, CovariantMetricTensor_gij = self.get_gij(tor1_arr, tor2_arr, tor3_arr_for_eval)
+        
+        # Transpose to match init_gvec_geometry format: (3, 3, Nr, Ntheta, Nphi)
+        CovariantMetricTensor = np.transpose(CovariantMetricTensor_gij, (3, 4, 0, 1, 2))
+        ContravariantMetricTensor = np.transpose(ContravariantMetricTensor_gij, (3, 4, 0, 1, 2))
+        
+        # Get B field (returns shape: (Nr, Ntheta, Nphi, 3))
+        B_contra_gij = self.get_Bcontra(tor1_arr, tor2_arr, tor3_arr_for_eval)
+        
+        # Transpose to match init_gvec_geometry format: (3, Nr, Ntheta, Nphi)
+        B_contra = np.transpose(B_contra_gij, (3, 0, 1, 2))
+        
+        # Compute B_norm from B_contra and covariant metric tensor
+        # B_norm^2 = B^i * g_ij * B^j
+        B_norm_squared = np.einsum("i...,ij...,j...->...", B_contra, CovariantMetricTensor, B_contra)
+        B_norm = np.sqrt(B_norm_squared)
+        
+        # Extract B0 from first point (r=0 or r_min, theta=0, zeta=0)
+        # Handle both 2D and 3D cases
+        if B_norm.ndim == 3:
+            B0 = B_norm[0, 0, 0]
+        else:
+            B0 = B_norm[0, 0]
+        B_norm = B_norm / B0
+        
+        # Get radial profiles: dPhi_dr and current_tor1
+        # dPhi_dr = R0 * f(r)
+        ffunc_arr = self.spline_ffunc(tor1_arr)
+        dPhi_dr = self.R0 * ffunc_arr
+        
+        # current_tor1 = R0 * g(r)
+        gfunc_arr = self.spline_gfunc(tor1_arr)
+        current_tor1 = self.R0 * gfunc_arr
+        
+        # Handle squeezing when nb_grid_tor3 == 1 (similar to init_gvec_geometry)
+        if nb_grid_tor3 == 1:
+            R_coord = R_coord.squeeze()
+            Z_coord = Z_coord.squeeze()
+            B_contra = B_contra.squeeze()
+            B_norm = B_norm.squeeze()
+            ContravariantMetricTensor = ContravariantMetricTensor.squeeze()
+            CovariantMetricTensor = CovariantMetricTensor.squeeze()
+        
+        # Determine toroidal coordinates
+        tor_coord = ["tor1", "tor2", "tor3"] if tor3_arr is not None else ["tor1", "tor2"]
+        metric_array = list(range(3))
+        metric_coord = ["metric1", "metric2"] + tor_coord
+        
+        # Create coordinate dictionary
+        coords_dict = {"tor1": tor1_arr, "tor2": tor2_arr}
+        if tor3_arr is not None:
+            # Use original tor3_arr for coordinates (not the evaluation version)
+            if np.size(tor3_arr) > 1:
+                coords_dict["tor3"] = np.asarray(tor3_arr)
+            else:
+                coords_dict["tor3"] = np.array([tor3_arr]) if not isinstance(tor3_arr, np.ndarray) else tor3_arr
+        
+        # Create ds_gvec_geometry
+        ds_gvec_geometry = xr.Dataset(
+            data_vars={
+                "R0": ((), self.R0),
+                "kappa": ((), self.kappa_elongation),
+                "delta": ((), self.delta_triangularity),
+                "beta": ((), self.beta_toro),
+            },
+            coords=coords_dict,
+        )
+        
+        # Save R and Z coordinates
+        ds_gvec_geometry = ds_gvec_geometry.assign(R_coord=(tor_coord, R_coord))
+        ds_gvec_geometry = ds_gvec_geometry.assign(Z_coord=(tor_coord, Z_coord))
+        
+        # Save metric tensors
+        ds_gvec_geometry = ds_gvec_geometry.assign_coords(metric1=("metric1", metric_array))
+        ds_gvec_geometry = ds_gvec_geometry.assign_coords(metric2=("metric2", metric_array))
+        ds_gvec_geometry = ds_gvec_geometry.assign(
+            CovariantMetricTensor=(
+                metric_coord,
+                CovariantMetricTensor[: len(metric_array), : len(metric_array), ...],
+            )
+        )
+        ds_gvec_geometry = ds_gvec_geometry.assign(
+            ContravariantMetricTensor=(
+                metric_coord,
+                ContravariantMetricTensor[: len(metric_array), : len(metric_array), ...],
+            )
+        )
+        
+        # Individual metric tensor components for compatibility
+        ds_gvec_geometry = ds_gvec_geometry.assign(CovariantMetricTensor_11=(tor_coord, CovariantMetricTensor[0, 0, ...]))
+        ds_gvec_geometry = ds_gvec_geometry.assign(CovariantMetricTensor_12=(tor_coord, CovariantMetricTensor[0, 1, ...]))
+        ds_gvec_geometry = ds_gvec_geometry.assign(CovariantMetricTensor_21=(tor_coord, CovariantMetricTensor[1, 0, ...]))
+        ds_gvec_geometry = ds_gvec_geometry.assign(CovariantMetricTensor_22=(tor_coord, CovariantMetricTensor[1, 1, ...]))
+        ds_gvec_geometry = ds_gvec_geometry.assign(CovariantMetricTensor_33=(tor_coord, CovariantMetricTensor[2, 2, ...]))
+        ds_gvec_geometry = ds_gvec_geometry.assign(
+            ContravariantMetricTensor_11=(tor_coord, ContravariantMetricTensor[0, 0, ...])
+        )
+        ds_gvec_geometry = ds_gvec_geometry.assign(
+            ContravariantMetricTensor_12=(tor_coord, ContravariantMetricTensor[0, 1, ...])
+        )
+        ds_gvec_geometry = ds_gvec_geometry.assign(
+            ContravariantMetricTensor_21=(tor_coord, ContravariantMetricTensor[1, 0, ...])
+        )
+        ds_gvec_geometry = ds_gvec_geometry.assign(
+            ContravariantMetricTensor_22=(tor_coord, ContravariantMetricTensor[1, 1, ...])
+        )
+        ds_gvec_geometry = ds_gvec_geometry.assign(
+            ContravariantMetricTensor_33=(tor_coord, ContravariantMetricTensor[2, 2, ...])
+        )
+        
+        # Initialisation of the magnetic field
+        ds_magnetconf = ds_gvec_geometry[tor_coord].copy()
+        ds_magnetconf = ds_magnetconf.assign(dPsidr_tor1=("tor1", dPhi_dr))
+        ds_magnetconf = ds_magnetconf.assign(current_tor1=("tor1", current_tor1))
+        ds_magnetconf = ds_magnetconf.assign(B_contra=(["metric1"] + tor_coord, B_contra))
+        
+        # Extract individual B components (ellipsis handles both 2D and 3D cases)
+        ds_magnetconf = ds_magnetconf.assign(B_tor1_contra=(tor_coord, B_contra[0, ...]))
+        ds_magnetconf = ds_magnetconf.assign(B_tor2_contra=(tor_coord, B_contra[1, ...]))
+        ds_magnetconf = ds_magnetconf.assign(B_tor3_contra=(tor_coord, B_contra[2, ...]))
+        ds_magnetconf = ds_magnetconf.assign(B_norm=(tor_coord, B_norm))
+        
+        return ds_gvec_geometry, ds_magnetconf
