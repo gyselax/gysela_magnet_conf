@@ -709,23 +709,23 @@ class GvecMagnetConfig(MagnetConfig):
         theta = tor2_arr
         zeta = np.array([0.0]) if nb_grid_tor3 == 1 else np.asarray(tor3_arr_for_eval)
         
-        ev = self._evaluate_gvec(rho, theta, zeta, ["mod_B", "dPhi_dr", "I_tor"])
+        ev = self._evaluate_gvec(rho, theta, zeta, ["mod_B", "dPhi_dr", "J"])
         
         B_norm = ev.mod_B.values
         # Extract B0 from first point (r=0 or r_min, theta=0, zeta=0)
         B0 = B_norm[0, 0, 0]
         B_norm = B_norm / B0
         
-        # Extract radial profiles (dPhi_dr and I_tor are flux-surface quantities)
+        # Extract radial profiles (dPhi_dr and J are flux-surface quantities)
         # Take first slice along theta and phi (they should be constant along these)
         dPhi_dr = ev.dPhi_dr.values
-        current_tor1 = ev.I_tor.values
+        current_tor1 = ev.J.values
         
         # Extract 1D radial profiles (take first slice along theta and phi)
         if dPhi_dr.ndim > 1:
             dPhi_dr = dPhi_dr[:, 0, 0]
         if current_tor1.ndim > 1:
-            current_tor1 = current_tor1[:, 0, 0]
+            current_tor1 = current_tor1[:, 0, 0, 0]
         
         # Handle squeezing when nb_grid_tor3 == 1 (similar to init_gvec_geometry)
         if nb_grid_tor3 == 1:
@@ -844,7 +844,7 @@ class GvecMagnetConfig(MagnetConfig):
         # Get magnetic field
         B_contra = self.get_Bcontra(tor1_arr, tor2_arr, tor3_arr)
         
-        # Get current profile (I_tor) from GVEC
+        # Get current profile (J) from GVEC
         rho = tor1_arr.copy()
         if rho[0] == 0.0:
             rho[0] = self.rho_min
@@ -852,40 +852,17 @@ class GvecMagnetConfig(MagnetConfig):
         # Evaluate current at grid points
         theta = tor2_arr
         zeta = np.array([0.0]) if nb_grid_tor3 == 1 else np.asarray(tor3_arr)
-        ev = self._evaluate_gvec(rho, theta, zeta, ["I_tor", "dPhi_dr"])
-        
-        I_tor = ev.I_tor.values
-        dPhi_dr = ev.dPhi_dr.values
+        ev = self._evaluate_gvec(rho, theta, zeta, ["J_contra_r", "J_contra_t", "J_contra_z", "dPhi_dr"])
+        J_contra_radial = ev.J_contra_r.values
+        J_contra_poloidal = ev.J_contra_t.values
+        J_contra_toroidal = ev.J_contra_z.values
         
         # Compute current density components
         # J^r = 0 (radial component vanishes)
         J_contra[:, :, :, 0] = 0.0
-        
-        # J^theta and J^phi require derivatives of I_tor
-        # For simplicity, use finite differences on the radial grid
-        from scipy.interpolate import CubicSpline
-        
-        # Interpolate I_tor and dPhi_dr for derivatives
-        I_tor_spline = CubicSpline(self.r_array, self.current_r, bc_type='natural')
-        dPhi_dr_spline = CubicSpline(self.r_array, self.dPsidr_r, bc_type='natural')
-        
-        for i, r_pos in enumerate(tor1_arr):
-            dIdr = I_tor_spline(r_pos, nu=1)  # dI/dr
-            dpsidr = dPhi_dr_spline(r_pos)  # dPsi/dr
-            
-            if abs(dpsidr) < 1e-12:
-                continue
-            
-            for j in range(nb_grid_tor2):
-                for k in range(nb_grid_tor3):
-                    # J^theta = -dI/dpsi * B^theta
-                    J_contra[i, j, k, 1] = -(dIdr / dpsidr) * B_contra[i, j, k, 1]
-                    
-                    # J^phi = -dI/dr * B^phi / (dpsi/dr)
-                    # Note: This is a simplified version
-                    # Full expression would include pressure gradient term
-                    J_contra[i, j, k, 2] = -(dIdr * B_contra[i, j, k, 2]) / dpsidr
-        
+        J_contra[:, :, :, 1] = J_contra_poloidal
+        J_contra[:, :, :, 2] = J_contra_toroidal
+     
         return J_contra
 
     def get_params(self):
