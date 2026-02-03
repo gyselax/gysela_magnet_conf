@@ -12,6 +12,7 @@ import numpy as np
 
 from .magnet_config import MagnetConfig
 
+
 class CircularMagnetConfig(MagnetConfig):
     """
     Class to initialise the magnetic configuration
@@ -47,7 +48,6 @@ class CircularMagnetConfig(MagnetConfig):
             R_coord = R0 + tor1_arr[:, None, None] * np.cos(theta[:, :, None]) + 0 * tor3_arr[None, None, :]
             Z_coord = tor1_arr[:, None, None] * np.sin(theta[:, :, None]) + 0 * tor3_arr[None, None, :]
         return R_coord, Z_coord
-    
 
     def get_gij(self, tor1_arr, tor2_arr, tor3_arr):
         """
@@ -63,16 +63,14 @@ class CircularMagnetConfig(MagnetConfig):
         shape_cocontra = (nb_grid_tor1, nb_grid_tor2, nb_grid_tor3, 3, 3)
         CovariantMetricTensor = np.zeros(shape_cocontra, dtype=float)
 
-        R0 = self.aspect_ratio
-
         CovariantMetricTensor[..., 0, 0] = 1
-        CovariantMetricTensor[..., 1, 1] = (tor1_arr[:, None, None])**2
+        CovariantMetricTensor[..., 1, 1] = (tor1_arr[:, None, None]) ** 2
         R, _ = self.get_RZ(tor1_arr, tor2_arr, tor3_arr)
         CovariantMetricTensor[..., 2, 2] = R**2
 
         if self.thetastar:
             Jacobimat = self.get_jacobi_theta_thetastar_(tor1_arr, tor2_arr, tor3_arr)
-            CovariantMetricTensor = np.einsum('...ki,...kl,...lj->...ij', Jacobimat, CovariantMetricTensor, Jacobimat)
+            CovariantMetricTensor = np.einsum("...ki,...kl,...lj->...ij", Jacobimat, CovariantMetricTensor, Jacobimat)
 
         ContravariantMetricTensor = np.linalg.inv(CovariantMetricTensor)
         return ContravariantMetricTensor, CovariantMetricTensor
@@ -85,12 +83,13 @@ class CircularMagnetConfig(MagnetConfig):
         """
         from scipy.interpolate import CubicSpline
         from scipy.integrate import cumtrapz
+
         Nrint = 1024
         rint = np.linspace(0, np.max(tor1_arr), Nrint, True)
         qint = self.get_q(rint)
         dPsidrint = rint / qint
         Psiint = cumtrapz(dPsidrint, rint, initial=0)
-        cb = CubicSpline(rint, Psiint, bc_type=((1,0), (1,dPsidrint[-1])))
+        cb = CubicSpline(rint, Psiint, bc_type=((1, 0), (1, dPsidrint[-1])))
         Psi = cb(tor1_arr)
 
         q = self.get_q(tor1_arr)
@@ -111,7 +110,6 @@ class CircularMagnetConfig(MagnetConfig):
             q = qGYS
         return q
 
-
     def get_Bcontra(self, tor1_arr, tor2_arr, tor3_arr):
         """
         Create the magnetic field from toroidal coordinates, assuming self.ds_geometry is already initialised
@@ -130,11 +128,11 @@ class CircularMagnetConfig(MagnetConfig):
         R, _ = self.get_RZ(tor1_arr, tor2_arr, tor3_arr)
         q_arr, _ = self.q_profile.get_q(tor1_arr)
 
-        #B^r = 0
+        # B^r = 0
         B_contra[..., 0] = 0
-        #B^\theta
+        # B^\theta
         B_contra[..., 1] = 1 / R / q_arr[:, None, None]
-        #B^\phi
+        # B^\phi
         B_contra[..., 2] = R0 / R**2
 
         if self.thetastar:
@@ -157,25 +155,24 @@ class CircularMagnetConfig(MagnetConfig):
         shape_J = (nb_grid_tor1, nb_grid_tor2, nb_grid_tor3, 3)
         J_contra = np.zeros(shape_J, dtype=float)
 
-        R0 = self.aspect_ratio
         theta = self.get_theta_from_thetastar_(tor1_arr, tor2_arr)
         R, _ = self.get_RZ(tor1_arr, tor2_arr, tor3_arr)
         qGYS, dqGYSdr = self.q_profile.get_q(tor1_arr)
 
-        #J^r = 0
+        # J^r = 0
         J_contra[..., 0] = 0
-        #J^\theta
+        # J^\theta
         J_contra[..., 1] = 0
-        #J^\phi
+        # J^\phi
         r = tor1_arr
         R, _ = self.get_RZ(tor1_arr, tor2_arr, tor3_arr)
         factor1 = 1 / qGYS[:, None, None] / R**2
         if self.thetastar:
             theta = self.get_theta_from_thetastar_(tor1_arr, tor2_arr)
         else:
-            theta = tor2_arr[None, :] + tor1_arr[:, None]*0
-        factor2 = (2 - r/qGYS*dqGYSdr)
-        factor2 = factor2[:, None, None] - r[:, None, None]*np.cos(theta[:, :, None]) / R
+            theta = tor2_arr[None, :] + tor1_arr[:, None] * 0
+        factor2 = 2 - r / qGYS * dqGYSdr
+        factor2 = factor2[:, None, None] - r[:, None, None] * np.cos(theta[:, :, None]) / R
         J_contra[..., 2] = factor1 * factor2
 
         return J_contra
@@ -206,7 +203,7 @@ class CircularMagnetConfig(MagnetConfig):
         Jacobimat[..., 2, 2] = 1
 
         return Jacobimat
-    
+
     def get_theta_from_thetastar_(self, tor1_arr, tor2_arr):
         """
         Get theta from theta*
@@ -215,5 +212,7 @@ class CircularMagnetConfig(MagnetConfig):
         :return: theta
         """
         R0 = self.aspect_ratio
-        theta = 2 * np.arctan(np.tan(tor2_arr[None, :] / 2) * np.sqrt((R0 + tor1_arr[:, None]) / (R0 - tor1_arr[:, None])))
+        theta = 2 * np.arctan(
+            np.tan(tor2_arr[None, :] / 2) * np.sqrt((R0 + tor1_arr[:, None]) / (R0 - tor1_arr[:, None]))
+        )
         return theta

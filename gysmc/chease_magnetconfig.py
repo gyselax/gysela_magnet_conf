@@ -8,14 +8,13 @@ Created on 2025-11-08
 @author: Z. S. Qu
 """
 
-import os
 import numpy as np
-import scipy.integrate
-from scipy.interpolate import RectBivariateSpline, CubicSpline
+from scipy.interpolate import CubicSpline
+
 try:
     from scipy.integrate import cumtrapz
 except ImportError:
-    from scipy.integrate import cumulative_trapezoid as cumtrapz
+    pass
 
 from .gsespline_magnetconfig import GSEMagnetConfig
 
@@ -23,13 +22,13 @@ from .gsespline_magnetconfig import GSEMagnetConfig
 class CHEASEMagnetConfig(GSEMagnetConfig):
     """
     Class to initialise the magnetic configuration from CHEASE output files.
-    
+
     In CHEASE, set NIDEAL = 9 (ORB5, GENE) to output the necessary data.
     CHEASE should generate ogyropsi.dat
-    
-    This class extends MagnetConfig to work with CHEASE (Cylindrical Harmonic Expansion for Axisymmetric Equilibria) 
+
+    This class extends MagnetConfig to work with CHEASE (Cylindrical Harmonic Expansion for Axisymmetric Equilibria)
     format magnetic equilibrium data. It provides functionality to:
-    
+
     1. Load magnetic equilibrium data from CHEASE format
     2. Compute R(psi,theta) and Z(psi,theta) mappings
     3. Interpolate between flux surfaces and poloidal angles
@@ -53,65 +52,65 @@ class CHEASEMagnetConfig(GSEMagnetConfig):
 
         self.ogyropsi_data = read_ogyropsi(ogyropsi_filename)
 
-        self.cocos = int(self.ogyropsi_data['COCOS'])
+        self.cocos = int(self.ogyropsi_data["COCOS"])
         if self.cocos != 2:
             raise Exception("ERROR: One must ensure COCOS=2 convention in CHEASE output for GYSELA compatibility.")
-        
-        if round(self.ogyropsi_data['NCHI'] % 2) != 0:
+
+        if round(self.ogyropsi_data["NCHI"] % 2) != 0:
             raise Exception("ERROR: NCHI must be even in CHEASE output.")
-        
+
         super().__init__(cocos=2, verbose=verbose)
 
         print("WARNING: r is related to sqrt(poloidal flux), not the geometrical minor radius!")
         print("WARNING: rmax is set at {:.4f}, linked to psinorm_max at {:.4f}".format(rmax, psinorm_max))
 
-        self.psi1_real = np.max(self.ogyropsi_data['PSI'])
+        self.psi1_real = np.max(self.ogyropsi_data["PSI"])
         self.psinorm_max = psinorm_max
         self.rmax = rmax
         self.smax = np.sqrt(psinorm_max)
-        self.s_at_r_one = self.smax/rmax # value of s at r = 1.0
-        
-        self.Z_psichi_original = self.ogyropsi_data['Z']
-        self.R_psichi_original = self.ogyropsi_data['R']
-        self.R_grid_original = self.ogyropsi_data['Rmesh']
-        self.Z_grid_original = self.ogyropsi_data['Zmesh']
-        self.psinorm = self.ogyropsi_data['psiRZ'] / self.psi1_real
-        self.Rbdry = self.ogyropsi_data['RBOUNDplasma']
-        self.Zbdry = self.ogyropsi_data['ZBOUNDplasma']
+        self.s_at_r_one = self.smax / rmax  # value of s at r = 1.0
+
+        self.Z_psichi_original = self.ogyropsi_data["Z"]
+        self.R_psichi_original = self.ogyropsi_data["R"]
+        self.R_grid_original = self.ogyropsi_data["Rmesh"]
+        self.Z_grid_original = self.ogyropsi_data["Zmesh"]
+        self.psinorm = self.ogyropsi_data["psiRZ"] / self.psi1_real
+        self.Rbdry = self.ogyropsi_data["RBOUNDplasma"]
+        self.Zbdry = self.ogyropsi_data["ZBOUNDplasma"]
         self.Rmaxis = self.R_psichi_original[0, 0]
         self.Zmaxis = self.Z_psichi_original[0, 0]
 
-        f_ = self.ogyropsi_data['f']
-        ffprime_ = self.ogyropsi_data['fdfdpsi']
-        p_ = self.ogyropsi_data['p']
-        p_prime_ = self.ogyropsi_data['dpdpsi']
-        q_ = self.ogyropsi_data['q']
+        f_ = self.ogyropsi_data["f"]
+        ffprime_ = self.ogyropsi_data["fdfdpsi"]
+        self.ogyropsi_data["p"]
+        p_prime_ = self.ogyropsi_data["dpdpsi"]
+        q_ = self.ogyropsi_data["q"]
 
-        s_target = self.ogyropsi_data['rho_pol_norm']
+        s_target = self.ogyropsi_data["rho_pol_norm"]
         self.r_grid = s_target / self.smax * self.rmax
         Nintr = len(s_target)
-        self.theta_vals = np.concatenate([self.ogyropsi_data['CHI'], [2*np.pi]])
+        self.theta_vals = np.concatenate([self.ogyropsi_data["CHI"], [2 * np.pi]])
         Ninttheta = len(self.theta_vals)  # add one for periodicity
 
         # construct cubic splines for R(r) and Z(r) at each theta, extend r to negative for natural BCs
         s_combined = np.concatenate([-s_target[::-1], s_target[1:]])
         r_combined = s_combined / self.smax * self.rmax
-        R_combined = np.zeros([2*Nintr-1, Ninttheta])
-        Z_combined = np.zeros([2*Nintr-1, Ninttheta])
+        R_combined = np.zeros([2 * Nintr - 1, Ninttheta])
+        Z_combined = np.zeros([2 * Nintr - 1, Ninttheta])
 
         # combine R and Z for negative and positive s for smooth natural BCs
-        for i in range(Ninttheta//2):
+        for i in range(Ninttheta // 2):
             Nhalf = Ninttheta // 2
-            R_combined[:, i] = np.concatenate([self.R_psichi_original[::-1, i+Nhalf], self.R_psichi_original[1:, i]]) 
-            Z_combined[:, i] = np.concatenate([self.Z_psichi_original[::-1, i+Nhalf], self.Z_psichi_original[1:, i]])
-            R_combined[:, i+Nhalf] = R_combined[::-1, i]
-            Z_combined[:, i+Nhalf] = Z_combined[::-1, i]
+            R_combined[:, i] = np.concatenate([self.R_psichi_original[::-1, i + Nhalf], self.R_psichi_original[1:, i]])
+            Z_combined[:, i] = np.concatenate([self.Z_psichi_original[::-1, i + Nhalf], self.Z_psichi_original[1:, i]])
+            R_combined[:, i + Nhalf] = R_combined[::-1, i]
+            Z_combined[:, i + Nhalf] = Z_combined[::-1, i]
 
         R_combined[:, -1] = R_combined[:, 0]
         Z_combined[:, -1] = Z_combined[:, 0]
 
         self.cb_R_r = CubicSpline(r_combined, R_combined, axis=0)
-        self.cb_Z_r= CubicSpline(r_combined, Z_combined, axis=0)
+        self.cb_Z_r = CubicSpline(r_combined, Z_combined, axis=0)
 
         self.ageo_real = (np.max(self.cb_R_r(1.0)) - np.min(self.cb_R_r(1.0))) / 2.0
         self.Rgeo_real = (np.max(self.cb_R_r(1.0)) + np.min(self.cb_R_r(1.0))) / 2.0
@@ -125,20 +124,37 @@ class CHEASEMagnetConfig(GSEMagnetConfig):
         self.psi1_norm = self.psi1_real / (self.Bvac0_real * self.ageo_real**2)
 
         if verbose:
-            print('INFO: Computational boundary at r={:.4f}: s_max={:.4f}, psinorm_max={:.4f}'.format(
-                rmax, self.smax, psinorm_max))
-            print('INFO: Plasma boundary at r=1.0: s(r=1.0)={:.4f}, psinorm(r=1.0)={:.4f}'.format(
-                self.s_at_r_one, self.s_at_r_one**2))
-            print('INFO: Geometry in original unit: R_geo = {:.4f}, a_geo(at r=1) = {:.4f}, Aspect ratio = {:.4f}'.format(
-                self.Rgeo_real, self.ageo_real, self.aspect_ratio))
-            print('INFO: Magnetic field in original unit: Bvac_geocentre = {:.4f}, B_axis = {:.4f}'.format(
-                self.Bvac0_real, self.Bphyaxis_real))
-            print('INFO: Psi1: in original unit psi1 = {:.4f}, normalised to Bvac0*a_geo^2 psi1_norm = {:.4f}'.format(
-                self.psi1_real, self.psi1_norm))
-            
-        print("INFO: B is normalised to Bvac0={:.4f} at Rgeo={:.4f}, length to a_geo={:.4f}".format(
-        self.Bvac0_real, self.Rgeo_real, self.ageo_real))
+            print(
+                "INFO: Computational boundary at r={:.4f}: s_max={:.4f}, psinorm_max={:.4f}".format(
+                    rmax, self.smax, psinorm_max
+                )
+            )
+            print(
+                "INFO: Plasma boundary at r=1.0: s(r=1.0)={:.4f}, psinorm(r=1.0)={:.4f}".format(
+                    self.s_at_r_one, self.s_at_r_one**2
+                )
+            )
+            print(
+                "INFO: Geometry in original unit: R_geo = {:.4f}, a_geo(at r=1) = {:.4f}, Aspect ratio = {:.4f}".format(
+                    self.Rgeo_real, self.ageo_real, self.aspect_ratio
+                )
+            )
+            print(
+                "INFO: Magnetic field in original unit: Bvac_geocentre = {:.4f}, B_axis = {:.4f}".format(
+                    self.Bvac0_real, self.Bphyaxis_real
+                )
+            )
+            print(
+                "INFO: Psi1: in original unit psi1 = {:.4f}, normalised to Bvac0*a_geo^2 psi1_norm = {:.4f}".format(
+                    self.psi1_real, self.psi1_norm
+                )
+            )
 
+        print(
+            "INFO: B is normalised to Bvac0={:.4f} at Rgeo={:.4f}, length to a_geo={:.4f}".format(
+                self.Bvac0_real, self.Rgeo_real, self.ageo_real
+            )
+        )
 
         # normalise plasma profiles
         mu0 = 4e-7 * np.pi
@@ -146,20 +162,20 @@ class CHEASEMagnetConfig(GSEMagnetConfig):
         psiunit = self.Bvac0_real * self.ageo_real**2
         mu0punit = self.Bvac0_real**2
         Fprofile_norm = f_ / Funit
-        FFprimeprofile_norm = ffprime_ / (Funit**2/psiunit)
+        FFprimeprofile_norm = ffprime_ / (Funit**2 / psiunit)
         pprime_norm = mu0 * p_prime_ / (mu0punit / psiunit)
 
-        self.F_cb = CubicSpline(self.r_grid, Fprofile_norm, bc_type=((1,0), (2,0)))
-        self.FFprime_cb = CubicSpline(self.r_grid, FFprimeprofile_norm, bc_type='natural')
-        self.pprime_cb = CubicSpline(self.r_grid, pprime_norm, bc_type='natural')
-        self.q_cb = CubicSpline(self.r_grid, q_, bc_type=((1,0), (2,0)))
+        self.F_cb = CubicSpline(self.r_grid, Fprofile_norm, bc_type=((1, 0), (2, 0)))
+        self.FFprime_cb = CubicSpline(self.r_grid, FFprimeprofile_norm, bc_type="natural")
+        self.pprime_cb = CubicSpline(self.r_grid, pprime_norm, bc_type="natural")
+        self.q_cb = CubicSpline(self.r_grid, q_, bc_type=((1, 0), (2, 0)))
 
         # normalise R and Z by a_geo
         R_combined /= self.ageo_real
         Z_combined /= self.ageo_real
 
         self.cb_R_r = CubicSpline(r_combined, R_combined, axis=0)
-        self.cb_Z_r= CubicSpline(r_combined, Z_combined, axis=0)
+        self.cb_Z_r = CubicSpline(r_combined, Z_combined, axis=0)
 
     def plot_flux_surfaces(self, num_surfaces=10, normalised_units=True):
         """
@@ -170,17 +186,17 @@ class CHEASEMagnetConfig(GSEMagnetConfig):
 
         # plot psi
         if normalised_units:
-            plt.pcolormesh(self.R_grid_original/self.ageo_real, self.Z_grid_original/self.ageo_real, self.psinorm.T)
-            plt.colorbar(label='Normalized Psi')
-            plt.plot(self.Rbdry/self.ageo_real, self.Zbdry/self.ageo_real, color='k')
-            plt.scatter(self.Rmaxis/self.ageo_real, self.Zmaxis/self.ageo_real, marker='x', color='r')
+            plt.pcolormesh(self.R_grid_original / self.ageo_real, self.Z_grid_original / self.ageo_real, self.psinorm.T)
+            plt.colorbar(label="Normalized Psi")
+            plt.plot(self.Rbdry / self.ageo_real, self.Zbdry / self.ageo_real, color="k")
+            plt.scatter(self.Rmaxis / self.ageo_real, self.Zmaxis / self.ageo_real, marker="x", color="r")
         else:
-            plt.pcolormesh(self.R_grid_original, self.Z_grid_original, self.psinorm.T*self.psi1_real)
-            plt.colorbar(label='Psi')
-            plt.plot(self.Rbdry, self.Zbdry, color='k')
-            plt.scatter(self.Rmaxis, self.Zmaxis, marker='x', color='r')
+            plt.pcolormesh(self.R_grid_original, self.Z_grid_original, self.psinorm.T * self.psi1_real)
+            plt.colorbar(label="Psi")
+            plt.plot(self.Rbdry, self.Zbdry, color="k")
+            plt.scatter(self.Rmaxis, self.Zmaxis, marker="x", color="r")
 
-        r_values = np.linspace(0, self.rmax, num_surfaces+1, True)[1:]  # exclude r=0
+        r_values = np.linspace(0, self.rmax, num_surfaces + 1, True)[1:]  # exclude r=0
 
         R_vals = self.cb_R_r(r_values)
         Z_vals = self.cb_Z_r(r_values)
@@ -188,22 +204,23 @@ class CHEASEMagnetConfig(GSEMagnetConfig):
         Z_vals_r_one = self.cb_Z_r(1.0)
 
         if normalised_units:
-            for i in range(num_surfaces-1):
-                plt.plot(R_vals[i], Z_vals[i], 'w-')
+            for i in range(num_surfaces - 1):
+                plt.plot(R_vals[i], Z_vals[i], "w-")
             if self.rmax > 1.0:
-                plt.plot(R_vals_r_one, Z_vals_r_one, 'r--', label='r=1.0')
-            plt.plot(R_vals[-1], Z_vals[-1], 'r-', label=r'$r={:.2f}$'.format(self.rmax))
-            plt.xlabel('R/a')
-            plt.ylabel('Z/a')
+                plt.plot(R_vals_r_one, Z_vals_r_one, "r--", label="r=1.0")
+            plt.plot(R_vals[-1], Z_vals[-1], "r-", label=r"$r={:.2f}$".format(self.rmax))
+            plt.xlabel("R/a")
+            plt.ylabel("Z/a")
         else:
             for i in range(num_surfaces):
-                plt.plot(R_vals[i]*self.ageo_real, Z_vals[i]*self.ageo_real, 'w-')
+                plt.plot(R_vals[i] * self.ageo_real, Z_vals[i] * self.ageo_real, "w-")
             if self.rmax > 1.0:
-                plt.plot(R_vals_r_one*self.ageo_real, Z_vals_r_one*self.ageo_real, 'r--', label='r=1.0')
-            plt.plot(R_vals[-1]*self.ageo_real, Z_vals[-1]*self.ageo_real, 'r-', label=r'$r={:.2f}$'.format(self.rmax))
-            plt.xlabel('R')
-            plt.ylabel('Z')
-        plt.title('Flux Surfaces from CHEASE Data')
-        plt.axis('equal')
+                plt.plot(R_vals_r_one * self.ageo_real, Z_vals_r_one * self.ageo_real, "r--", label="r=1.0")
+            plt.plot(
+                R_vals[-1] * self.ageo_real, Z_vals[-1] * self.ageo_real, "r-", label=r"$r={:.2f}$".format(self.rmax)
+            )
+            plt.xlabel("R")
+            plt.ylabel("Z")
+        plt.title("Flux Surfaces from CHEASE Data")
+        plt.axis("equal")
         plt.legend()
-    

@@ -10,12 +10,12 @@ Created on 2025-11-08
 
 import numpy as np
 from abc import abstractmethod
-import scipy.integrate
-from scipy.interpolate import RectBivariateSpline, CubicSpline
+from scipy.interpolate import CubicSpline
+
 try:
     from scipy.integrate import cumtrapz
 except ImportError:
-    from scipy.integrate import cumulative_trapezoid as cumtrapz
+    pass
 
 from .magnet_config import MagnetConfig
 
@@ -23,7 +23,7 @@ from .magnet_config import MagnetConfig
 class GSEMagnetConfig(MagnetConfig):
     """
     Class to initialise the magnetic configuration from a Grad-Shafranov equilibrium data
-    
+
     The __init__ method must be implemented in the child class to load the specific data format.
     1. The child class must set the following attributes:
         - self.cb_R_r : CubicSpline object for R(r, theta), spline is over r, theta is a parameter
@@ -38,6 +38,7 @@ class GSEMagnetConfig(MagnetConfig):
     2. The child class must call super().__init__(cocos, verbose) to set the cocos convention.
     3. The child class can implement additional methods as needed.
     """
+
     @abstractmethod
     def __init__(self, cocos=2, positive_current=False, verbose=True):
         """
@@ -50,7 +51,7 @@ class GSEMagnetConfig(MagnetConfig):
         the output uses cocos = 2 convention (GYSELA/CHEASE standard)
         """
 
-        self.set_cocos_convention(cocos, verbose=verbose) # set cocos convention
+        self.set_cocos_convention(cocos, verbose=verbose)  # set cocos convention
         self.positive_current = positive_current
 
     def set_cocos_convention(self, cocos, verbose=True):
@@ -87,10 +88,10 @@ class GSEMagnetConfig(MagnetConfig):
         dRdr = self.cb_R_r(r, nu=1)
         dZdr = self.cb_Z_r(r, nu=1)
 
-        cb_R = CubicSpline(self.theta_vals, R_coord_theta_interp, axis=1, bc_type='periodic')
-        cb_Z = CubicSpline(self.theta_vals, Z_coord_theta_interp, axis=1, bc_type='periodic')
-        cb_dRdr = CubicSpline(self.theta_vals, dRdr, axis=1, bc_type='periodic')
-        cb_dZdr = CubicSpline(self.theta_vals, dZdr, axis=1, bc_type='periodic')
+        cb_R = CubicSpline(self.theta_vals, R_coord_theta_interp, axis=1, bc_type="periodic")
+        cb_Z = CubicSpline(self.theta_vals, Z_coord_theta_interp, axis=1, bc_type="periodic")
+        cb_dRdr = CubicSpline(self.theta_vals, dRdr, axis=1, bc_type="periodic")
+        cb_dZdr = CubicSpline(self.theta_vals, dZdr, axis=1, bc_type="periodic")
 
         dR_dr = cb_dRdr(theta)
         dZ_dr = cb_dZdr(theta)
@@ -112,13 +113,13 @@ class GSEMagnetConfig(MagnetConfig):
         R_coord_theta_interp = self.cb_R_r(r)
         Z_coord_theta_interp = self.cb_Z_r(r)
 
-        cb_R = CubicSpline(self.theta_vals, R_coord_theta_interp, axis=1, bc_type='periodic')
-        cb_Z = CubicSpline(self.theta_vals, Z_coord_theta_interp, axis=1, bc_type='periodic')
+        cb_R = CubicSpline(self.theta_vals, R_coord_theta_interp, axis=1, bc_type="periodic")
+        cb_Z = CubicSpline(self.theta_vals, Z_coord_theta_interp, axis=1, bc_type="periodic")
 
         Zaxis = np.mean(cb_Z(self.theta_vals)[0])
 
-        R_coord = cb_R(theta)[:,:,None] + tor3_arr[None, None, :] * 0
-        Z_coord = cb_Z(theta)[:,:,None] + tor3_arr[None, None, :] * 0 - Zaxis
+        R_coord = cb_R(theta)[:, :, None] + tor3_arr[None, None, :] * 0
+        Z_coord = cb_Z(theta)[:, :, None] + tor3_arr[None, None, :] * 0 - Zaxis
 
         return R_coord, Z_coord
 
@@ -174,8 +175,7 @@ class GSEMagnetConfig(MagnetConfig):
         :return: q
         """
         current_sign = self._determine_current_sign()
-        return self.q_cb(tor1_arr) * self.signma_phi * current_sign 
-
+        return self.q_cb(tor1_arr) * self.signma_phi * current_sign
 
     def get_Bcontra(self, tor1_arr, tor2_arr, tor3_arr):
         """
@@ -190,16 +190,16 @@ class GSEMagnetConfig(MagnetConfig):
         nb_grid_tor2 = len(tor2_arr)
         nb_grid_tor3 = np.size(tor3_arr)
         shape_B = (nb_grid_tor1, nb_grid_tor2, nb_grid_tor3, 3)
-        
+
         B_contra = np.zeros(shape_B, dtype=float)
 
         # Compute all transformation derivatives using vectorized function
         # Returns arrays of shape (Nr, Ntheta)
         dR_dr, dR_dtheta, dZ_dr, dZ_dtheta = self._compute_dRZ_drt_(tor1_arr, tor2_arr)
-        
+
         # Get R coordinates (shape: Nr, Ntheta, Nphi)
         R, _ = self.get_RZ(tor1_arr, tor2_arr, tor3_arr)
-        
+
         # Compute Jacobian determinant from R-Z transformation (shape: Nr, Ntheta, Nphi)
         jacobian_det = (dR_dr * dZ_dtheta - dR_dtheta * dZ_dr)[:, :, None] * R
 
@@ -211,13 +211,13 @@ class GSEMagnetConfig(MagnetConfig):
         # Contravariant magnetic field components (fully vectorized)
         # B^r = 0
         B_contra[:, :, :, 0] = 0.0
-        
+
         # B^theta = dPsi/dr / J (shape: Nr, Ntheta, Nphi)
         B_contra[:, :, :, 1] = dPsidr / jacobian_det
 
         # B^phi = F/R**2 (shape: Nr, Ntheta, Nphi)
         B_contra[:, :, :, 2] = self.signma_phi * F[:, None, None] / R**2
-        
+
         return B_contra
 
     def get_Jcontra(self, tor1_arr, tor2_arr, tor3_arr):
@@ -239,15 +239,15 @@ class GSEMagnetConfig(MagnetConfig):
         FFprime = (self.FFprime_cb(tor1_arr))[:, None, None]
         F = self.F_cb(tor1_arr)[:, None, None]
         pprime = (self.pprime_cb(tor1_arr))[:, None, None]
-        
+
         B_contra = self.get_Bcontra(tor1_arr, tor2_arr, tor3_arr)
         R, _ = self.get_RZ(tor1_arr, tor2_arr, tor3_arr)
 
         J_contra[..., 1] = -(FFprime / F) * B_contra[..., 1] * current_sign
-        
+
         # J^phi = -(FF'/R^2 + mu0*p')
         J_contra[..., 2] = -(FFprime / R**2 + pprime) * self.signma_phi * current_sign
-        
+
         return J_contra
 
     def _determine_current_sign(self):
@@ -255,7 +255,7 @@ class GSEMagnetConfig(MagnetConfig):
         Determine the sign of the plasma current based on the q profile
         """
         if self.positive_current:
-            qedge = self.q_cb(self.rmax) * self.signma_phi 
+            qedge = self.q_cb(self.rmax) * self.signma_phi
             if qedge < 0:
                 current_sign = -1
             else:
