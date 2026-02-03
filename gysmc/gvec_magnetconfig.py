@@ -600,7 +600,7 @@ class GvecMagnetConfig(MagnetConfig):
         q_values = np.where(np.abs(iota_values) > 1e-12, 1.0 / iota_values, np.inf)
         return q_values
 
-    def get_Bcontra(self, tor1_arr, tor2_arr, tor3_arr, normalize=False):
+    def get_Bcontra(self, tor1_arr, tor2_arr, tor3_arr, normalise=False):
         """
         Create the magnetic field from toroidal coordinates.
         Fully vectorized implementation.
@@ -613,8 +613,8 @@ class GvecMagnetConfig(MagnetConfig):
             Poloidal coordinates (theta) - 1D array of shape (Ntheta,)
         tor3_arr : array_like
             Toroidal coordinates (phi) - scalar or 1D array of shape (Nphi,)
-        normalize : bool, optional
-            Normalize the magnetic field by the magnetic field (default: False)
+        normalise : bool, optional
+            Normalise the magnetic field by the magnetic field (default: False)
         Returns:
         --------
         array : B_contra magnetic field components of shape (Nr, Ntheta, Nphi, 3)
@@ -647,9 +647,9 @@ class GvecMagnetConfig(MagnetConfig):
 
         B_contra_t = ev.B_contra_t.values
         B_contra_z = ev.B_contra_z.values
-        # Normalize by B0
-        B_contra_t = B_contra_t / self.B0 if normalize else B_contra_t
-        B_contra_z = B_contra_z / self.B0 if normalize else B_contra_z
+        # Normalise by B0
+        B_contra_t = B_contra_t / self.B0 if normalise else B_contra_t
+        B_contra_z = B_contra_z / self.B0 if normalise else B_contra_z
 
         # Fill B_contra array
         # Radial component vanishes by construction for flux coordinates
@@ -659,7 +659,7 @@ class GvecMagnetConfig(MagnetConfig):
 
         return B_contra
 
-    def to_gyselaX(self, tor1_arr, tor2_arr, tor3_arr, normalizeB=True):
+    def to_gyselaX(self, tor1_arr, tor2_arr, tor3_arr, normaliseB=True):
         """
         Convert the magnetic configuration to a GyselaX dataset.
 
@@ -709,7 +709,7 @@ class GvecMagnetConfig(MagnetConfig):
         ContravariantMetricTensor = np.transpose(ContravariantMetricTensor_gij, (3, 4, 0, 1, 2))
 
         # Get B field (returns shape: (Nr, Ntheta, Nphi, 3))
-        B_contra_gij = self.get_Bcontra(tor1_arr, tor2_arr, tor3_arr_for_eval, normalize=normalizeB)
+        B_contra_gij = self.get_Bcontra(tor1_arr, tor2_arr, tor3_arr_for_eval, normalise=normaliseB)
 
         # Transpose to match init_gvec_geometry format: (3, Nr, Ntheta, Nphi)
         B_contra = np.transpose(B_contra_gij, (3, 0, 1, 2))
@@ -727,7 +727,7 @@ class GvecMagnetConfig(MagnetConfig):
         B_norm = ev.mod_B.values
         # Extract B0 from first point (r=0 or r_min, theta=0, zeta=0)
         B0 = B_norm[0, 0, 0]
-        B_norm = B_norm / B0 if normalizeB else B_norm
+        B_norm = B_norm / B0 if normaliseB else B_norm
 
         # Extract radial profiles (dPhi_dr and J are flux-surface quantities)
         # Take first slice along theta and phi (they should be constant along these)
@@ -840,7 +840,7 @@ class GvecMagnetConfig(MagnetConfig):
 
         return ds_gvec_geometry, ds_magnetconf
 
-    def get_Jcontra(self, tor1_arr, tor2_arr, tor3_arr, normalize=True):
+    def get_Jcontra(self, tor1_arr, tor2_arr, tor3_arr, normalise=True):
         """
         Create the current density from toroidal coordinates.
 
@@ -852,11 +852,11 @@ class GvecMagnetConfig(MagnetConfig):
             Poloidal coordinates (theta)
         tor3_arr : array_like
             Toroidal coordinates (phi)
-        normalize : bool, optional
-            Normalize the current density by the magnetic field (default: True)
+        normalise : bool, optional
+            Normalise the current density by the magnetic field (default: True)
         Returns:
         --------
-        array : J_contra current density components (if normalize is False) or current density components normalized by the magnetic field (if normalize is True)
+        array : J_contra current density components (if normalise is False) or current density components normalised by the magnetic field (if normalise is True)
         """
         nb_grid_tor1 = len(tor1_arr)
         nb_grid_tor2 = len(tor2_arr)
@@ -882,7 +882,7 @@ class GvecMagnetConfig(MagnetConfig):
         J_contra[:, :, :, 1] = J_contra_poloidal
         J_contra[:, :, :, 2] = J_contra_toroidal
 
-        return J_contra * ev.mu0.values if normalize else J_contra
+        return J_contra * ev.mu0.values if normalise else J_contra
 
     def get_params(self):
         """

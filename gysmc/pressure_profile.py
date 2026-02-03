@@ -179,8 +179,8 @@ class PressureProfile:
                 tmp = -0.5 * dr * inv_Lns0_spec * (1.0 / np.cosh((rth - rpeak) / deltar_ns)) ** 2
                 ns_r[ir] = (1.0 + tmp) / (1.0 - tmp) * ns_r[ir - 1]
 
-            # Normalize density: int(ns0(r)*r*dr)/int(r*dr) = 1
-            self._normalize_density(grid_r, ns_r)
+            # Normalise density: int(ns0(r)*r*dr)/int(r*dr) = 1
+            self._normalise_density(grid_r, ns_r)
 
         elif profile_choice in [2, 4]:
             # Profile choice 2 & 4: Uses func_tanh and func_sech
@@ -210,8 +210,8 @@ class PressureProfile:
                 tmp = 0.5 * dr * inv_Lns0_spec * func_sech * func_tanh[ir]
                 ns_r[ir] = (1.0 + tmp) / (1.0 - tmp) * ns_r[ir - 1]
 
-            # Normalize density
-            self._normalize_density(grid_r, ns_r)
+            # Normalise density
+            self._normalise_density(grid_r, ns_r)
 
         elif profile_choice == 3:
             # Profile choice 3: Uses func_tanh_3
@@ -227,13 +227,13 @@ class PressureProfile:
                 tmp = -0.5 * dr * inv_Lns0_spec * func_tanh[ir]
                 ns_r[ir] = (1.0 + tmp) / (1.0 - tmp) * ns_r[ir - 1]
 
-            # Normalize density
-            self._normalize_density(grid_r, ns_r)
+            # Normalise density
+            self._normalise_density(grid_r, ns_r)
 
         elif profile_choice == 5:
             # CYCLONE base case profile
             # Exact analytical solution: ns(r) = exp(-kappa*deltar*tanh((r-rpeak)/deltar))
-            # NOTE: NO normalization applied (following Fortran implementation)
+            # NOTE: NO normalisation applied (following Fortran implementation)
             for ir in range(Nr + 1):
                 r_point = grid_r[ir]
                 ns_r[ir] = np.exp(-inv_Lns0_spec * deltar_ns * np.tanh((r_point - rpeak) / deltar_ns))
@@ -272,8 +272,8 @@ class PressureProfile:
                 tmp = -0.5 * dr * inv_LTs0_spec * (1.0 / np.cosh((rth - rpeak) / deltar_Ts)) ** 2
                 Ts_r[ir] = (1.0 + tmp) / (1.0 - tmp) * Ts_r[ir - 1]
 
-            # Normalize temperature to 1 at r=rpeak
-            self._normalize_temperature(grid_r, Ts_r, rpeak)
+            # Normalise temperature to 1 at r=rpeak
+            self._normalise_temperature(grid_r, Ts_r, rpeak)
 
         elif profile_choice in [2, 4]:
             # Profile choice 2 & 4: Uses func_tanh and func_sech
@@ -303,8 +303,8 @@ class PressureProfile:
                 tmp = 0.5 * dr * inv_LTs0_spec * func_sech * func_tanh[ir]
                 Ts_r[ir] = (1.0 + tmp) / (1.0 - tmp) * Ts_r[ir - 1]
 
-            # Normalize temperature to 1 at r=rpeak
-            self._normalize_temperature(grid_r, Ts_r, rpeak)
+            # Normalise temperature to 1 at r=rpeak
+            self._normalise_temperature(grid_r, Ts_r, rpeak)
 
         elif profile_choice == 3:
             # Profile choice 3: Uses func_tanh_3 with flux-driven considerations
@@ -326,13 +326,13 @@ class PressureProfile:
                 tmp = -0.5 * dr * invLTs0_r
                 Ts_r[ir] = (1.0 + tmp) / (1.0 - tmp) * Ts_r[ir - 1]
 
-            # Normalize temperature to 1 at r=rpeak
-            self._normalize_temperature(grid_r, Ts_r, rpeak)
+            # Normalise temperature to 1 at r=rpeak
+            self._normalise_temperature(grid_r, Ts_r, rpeak)
 
         elif profile_choice == 5:
             # CYCLONE base case profile
             # Exact analytical solution: Ts(r) = exp(-kappa*deltar*tanh((r-rpeak)/deltar))
-            # NOTE: NO normalization applied (following Fortran implementation)
+            # NOTE: NO normalisation applied (following Fortran implementation)
             for ir in range(Nr + 1):
                 r_point = grid_r[ir]
                 Ts_r[ir] = np.exp(-inv_LTs0_spec * deltar_Ts * np.tanh((r_point - rpeak) / deltar_Ts))
@@ -343,10 +343,10 @@ class PressureProfile:
 
         return Ts_r
 
-    def _normalize_density(self, grid_r, ns_r):
+    def _normalise_density(self, grid_r, ns_r):
         """
-        Normalize density profile: int(ns0(r)*r*dr)/int(r*dr) = 1
-        Based on density_normalization subroutine from init_prof_func.F90
+        Normalise density profile: int(ns0(r)*r*dr)/int(r*dr) = 1
+        Based on density_normalisation subroutine from init_prof_func.F90
         """
         Nr = len(grid_r) - 1
         dr = grid_r[1] - grid_r[0]  # Assuming uniform grid
@@ -360,13 +360,13 @@ class PressureProfile:
         # Divide by int(r*dr) = (rmax^2 - rmin^2) / 2
         ns0norm_tmp = ns0norm_tmp * 2.0 * dr / (grid_r[Nr] ** 2 - grid_r[0] ** 2)
 
-        # Normalize
+        # Normalise
         ns_r[:] = ns_r[:] / ns0norm_tmp
 
-    def _normalize_temperature(self, grid_r, Ts_r, rpeak):
+    def _normalise_temperature(self, grid_r, Ts_r, rpeak):
         """
-        Normalize temperature profile to 1 at r=rpeak
-        Based on temperature_normalization subroutine from init_prof_func.F90
+        Normalise temperature profile to 1 at r=rpeak
+        Based on temperature_normalisation subroutine from init_prof_func.F90
         """
         Nr = len(grid_r) - 1
         dr = grid_r[1] - grid_r[0]  # Assuming uniform grid
@@ -387,7 +387,7 @@ class PressureProfile:
         else:
             Ts0_norm = Ts_r[ir]
 
-        # Normalize
+        # Normalise
         if Ts0_norm != 0:
             Ts_r[:] = Ts_r[:] / Ts0_norm
 
@@ -410,7 +410,7 @@ class PressureProfile:
                 ri = grid_r[ir]
                 func_tanh_tmp = np.tanh(0.5 * (ri - rmin - rbuff)) - np.tanh(0.5 * (ri - rmax + rbuff))
                 func_tanh[ir] = func_tanh_tmp
-            # Normalize by max value
+            # Normalise by max value
             max_func = np.max(func_tanh)
             if max_func != 0:
                 func_tanh = func_tanh / max_func
@@ -424,7 +424,7 @@ class PressureProfile:
                 ri = grid_r[ir]
                 func_tanh_tmp = np.tanh(0.5 * (ri - rmin - rbuff1) / dr) - np.tanh(0.5 * (ri - rmax + rbuff2) / dr)
                 func_tanh[ir] = func_tanh_tmp
-            # Normalize by max value
+            # Normalise by max value
             max_func = np.max(func_tanh)
             if max_func != 0:
                 func_tanh = func_tanh / max_func
@@ -444,21 +444,21 @@ class PressureProfile:
                 # Apply radial correction factor
                 func_tanh[ir] = func_tanh_tmp * (1.0 + 0.7 * (0.5 - ri / minor_radius))
 
-            # Normalize by central value
+            # Normalise by central value
             central_idx = Nr // 2
             norm_val = 0.5 * (func_tanh[central_idx] + func_tanh[central_idx + 1])
             if norm_val != 0:
                 func_tanh = 2.0 * func_tanh / norm_val
 
         elif profile_choice == 4:
-            # func_tanh_4: Same as func_tanh_2 but without normalization by dr
+            # func_tanh_4: Same as func_tanh_2 but without normalisation by dr
             rbuff1 = 0.2 * Lr
             rbuff2 = 0.2 * Lr
             for ir in range(Nr + 1):
                 ri = grid_r[ir]
                 func_tanh_tmp = np.tanh(0.5 * (ri - rmin - rbuff1)) - np.tanh(0.5 * (ri - rmax + rbuff2))
                 func_tanh[ir] = func_tanh_tmp
-            # Normalize by max value
+            # Normalise by max value
             max_func = np.max(func_tanh)
             if max_func != 0:
                 func_tanh = func_tanh / max_func
