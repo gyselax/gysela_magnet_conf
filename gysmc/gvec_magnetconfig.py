@@ -840,7 +840,7 @@ class GvecMagnetConfig(MagnetConfig):
 
         return ds_gvec_geometry, ds_magnetconf
 
-    def get_Jcontra(self, tor1_arr, tor2_arr, tor3_arr, normalise=True):
+    def get_Jcontra(self, tor1_arr, tor2_arr, tor3_arr, normalise=True, force_zero_radial_current=False):
         """
         Create the current density from toroidal coordinates.
 
@@ -877,7 +877,10 @@ class GvecMagnetConfig(MagnetConfig):
         J_contra_toroidal = ev.J_contra_z.values
 
         # Compute current density components
-        # J^r = 0 (radial component vanishes)
+        if force_zero_radial_current:
+            J_contra[:, :, :, 0] = 0.0
+        else:
+            J_contra[:, :, :, 0] = J_contra_radial
         J_contra[:, :, :, 0] = J_contra_radial
         J_contra[:, :, :, 1] = J_contra_poloidal
         J_contra[:, :, :, 2] = J_contra_toroidal
@@ -897,7 +900,7 @@ class GvecMagnetConfig(MagnetConfig):
             return self.params
         return None
 
-    def to_hdf5(self, filename="magnet_config.h5", Nr=16, Ntheta=16, Nzeta=16):
+    def to_hdf5(self, filename="magnet_config.h5", Nr=16, Ntheta=16, Nzeta=16, force_zero_radial_current=False):
         """
         Save the magnetic configuration to an HDF5 file.
 
@@ -911,6 +914,8 @@ class GvecMagnetConfig(MagnetConfig):
             Number of poloidal grid points (default: 16)
         Nzeta : int, optional
             Number of toroidal grid points (default: 16)
+        force_zero_radial_current : bool, optional
+            Force the radial current to be zero (default: False)
         """
         import h5py
 
@@ -930,7 +935,7 @@ class GvecMagnetConfig(MagnetConfig):
         Psi, dPsidr = self.get_Psi(tor1)
         q = self.get_q(tor1)
         B_contra = self.get_Bcontra(tor1, tor2, tor3)
-        J_contra = self.get_Jcontra(tor1, tor2, tor3)
+        J_contra = self.get_Jcontra(tor1, tor2, tor3, force_zero_radial_current=force_zero_radial_current)
 
         # Save to HDF5
         # Save all toroidal slices (3D geometry)
