@@ -916,6 +916,7 @@ class GvecMagnetConfig(MagnetConfig):
             Number of toroidal grid points (default: 16)
         force_zero_radial_current : bool, optional
             Force the radial current to be zero (default: False)
+
         """
         import h5py
 
