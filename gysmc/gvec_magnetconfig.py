@@ -230,7 +230,7 @@ class GvecMagnetConfig(MagnetConfig):
         # Project name
         params["ProjectName"] = "GyselaX"
         # Physics parameters
-        params["chiEdge"] = np.pi  # poloidal flux at s=1
+        params["PhiEdge"] = np.pi  # poloidal flux at s=1
         # Rotational transform profile (iota = 1/q)
         iota_profile = 1.0 / self.q_profile
         # Avoid division by zero
@@ -881,7 +881,7 @@ class GvecMagnetConfig(MagnetConfig):
             J_contra[:, :, :, 0] = 0.0
         else:
             J_contra[:, :, :, 0] = J_contra_radial
-        J_contra[:, :, :, 0] = J_contra_radial
+        
         J_contra[:, :, :, 1] = J_contra_poloidal
         J_contra[:, :, :, 2] = J_contra_toroidal
 
