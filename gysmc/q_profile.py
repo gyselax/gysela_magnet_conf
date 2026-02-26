@@ -25,9 +25,8 @@ class QProfile:
         q_param4=1.0,
         read_q=False,
         q_filename=None,
-        rmax=1.2,
-        rmin=0.0,
-        number_radial_points=1024,
+        rmax = 1.,
+        number_radial_points=128,
     ):
         """
         Initialisation of the q profile
@@ -37,7 +36,7 @@ class QProfile:
         :param q_param1,q_param2,q_param3,q_param4: parameter for q profile
         :param read_q: file to read q profile from, if None, use analytical profile
         :param q_filename: file to load q profile
-        :param rmax: maximum radius for q profile
+        :rmax: maximum radius
         """
         from scipy.interpolate import CubicSpline
         import os
@@ -51,6 +50,7 @@ class QProfile:
             "cyclone": 4,
             "cycone": 4,  # Support both spellings
             "wesson": 5,
+            "logarithmic" : 6
         }
 
         # Convert string option to number if needed
@@ -145,6 +145,17 @@ class QProfile:
                     qr_tmp = q_param1 * ri_on_a2 / (1 - (1 - ri_on_a2) ** (q_param2 + 1))
                     self.q_r[ir] = qr_tmp
 
+            elif option == 6:
+                # Logarithmic profile
+                for ir in range(Nr + 1):
+                    ri = self.grid_r[ir]
+                    ri_on_a = ri / minor_radius
+                    qr_tmp = np.empty_like(ri_on_a)
+                    mask = ri_on_a < 1.e-6
+                    qr_tmp[mask] = q_param1
+                    mask2 = ~mask
+                    qr_tmp[mask2] = q_param1 + q_param2 * np.exp(q_param3 * np.log(ri_on_a[mask2]))
+                    self.q_r[ir] = qr_tmp
             else:
                 raise ValueError(f"q_profile option {option} is not supported")
 
@@ -163,3 +174,22 @@ class QProfile:
         dqdr = self.spline(tor1_arr, nu=1)  # First derivative
 
         return qprof, dqdr
+    
+    def write_q_profile(self, filename):
+        """
+        Write q profile to a .dat file
+        First column: r
+        Second column: q(r)
+
+        :param filename: name of the output .dat file
+        """
+        import numpy as np
+
+        data = np.column_stack((self.grid_r, self.q_r))
+
+        np.savetxt(
+            filename,
+            data,
+            fmt="%.8e",
+            comments=""
+        )
