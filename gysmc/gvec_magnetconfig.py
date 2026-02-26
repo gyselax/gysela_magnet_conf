@@ -600,6 +600,40 @@ class GvecMagnetConfig(MagnetConfig):
         q_values = np.where(np.abs(iota_values) > 1e-12, 1.0 / iota_values, np.inf)
         return q_values
 
+    def get_pressure(self, tor1_arr, tor2_arr=None, tor3_arr=None):
+        """
+        Get pressure profile
+
+        Parameters:
+        -----------
+        tor1_arr : array_like
+            Radial coordinates (r)
+        tor2_arr : array_like, optional
+            Poloidal coordinates (theta). If None, defaults to [0.0]
+        tor3_arr : array_like, optional
+            Toroidal coordinates (phi). If None, defaults to [0.0]
+
+        Returns:
+        --------
+        array : pressure profile
+        """
+        # Use provided coordinates or default to [0.0]
+        if tor2_arr is None:
+            tor2_arr = np.array([0.0])
+        else:
+            tor2_arr = np.asarray(tor2_arr)
+
+        if tor3_arr is None:
+            tor3_arr = np.array([0.0])
+        else:
+            tor3_arr = np.asarray(tor3_arr)
+
+        # Evaluate pressure from gvec state
+        ev = self._evaluate_gvec(np.asarray(tor1_arr), tor2_arr, tor3_arr, ["p"])
+        p_values = ev.p.values
+
+        return p_values.squeeze()
+
     def get_Bcontra(self, tor1_arr, tor2_arr, tor3_arr, normalise=False):
         """
         Create the magnetic field from toroidal coordinates.
@@ -764,15 +798,21 @@ class GvecMagnetConfig(MagnetConfig):
                 coords_dict["tor3"] = np.array([tor3_arr]) if not isinstance(tor3_arr, np.ndarray) else tor3_arr
 
         # Create ds_gvec_geometry
-        ds_gvec_geometry = xr.Dataset(
-            data_vars={
-                "R0": ((), self.R0),
-                "kappa": ((), self.kappa_elongation),
-                "delta": ((), self.delta_triangularity),
-                "beta": ((), self.beta_toro),
-            },
-            coords=coords_dict,
-        )
+        # Check if initialized via __init__ (has R0 attribute) vs from_params (from file)
+        if hasattr(self, "R0") and hasattr(self, "kappa_elongation"):
+            # Initialized via __init__ - has geometry parameters
+            ds_gvec_geometry = xr.Dataset(
+                data_vars={
+                    "R0": ((), self.R0),
+                    "kappa": ((), self.kappa_elongation),
+                    "delta": ((), self.delta_triangularity),
+                    "beta": ((), self.beta_toro),
+                },
+                coords=coords_dict,
+            )
+        else:
+            # Initialized via from_params (from file) - no geometry parameters available
+            ds_gvec_geometry = xr.Dataset(coords=coords_dict)
 
         # Save R and Z coordinates
         ds_gvec_geometry = ds_gvec_geometry.assign(R_coord=(tor_coord, R_coord))
@@ -881,7 +921,7 @@ class GvecMagnetConfig(MagnetConfig):
             J_contra[:, :, :, 0] = 0.0
         else:
             J_contra[:, :, :, 0] = J_contra_radial
-        J_contra[:, :, :, 0] = J_contra_radial
+        
         J_contra[:, :, :, 1] = J_contra_poloidal
         J_contra[:, :, :, 2] = J_contra_toroidal
 
@@ -1040,7 +1080,7 @@ class GvecMagnetConfig(MagnetConfig):
 
         plt.show()
 
-    def plot_3D(self, Nr=50, Ntheta=90, Nzeta=93):
+    def plot_3D(self, Nr=50, Ntheta=90, Nzeta=93, figure_path=None):
         """
         Create a 3D plot of the magnetic configuration.
 
@@ -1052,6 +1092,8 @@ class GvecMagnetConfig(MagnetConfig):
             Number of poloidal grid points (default: 90)
         Nzeta : int, optional
             Number of toroidal grid points (default: 93)
+        figure_path : str, optional
+            Path to save the figure (default: None)
         """
 
         # Create coordinate grids
@@ -1099,6 +1141,8 @@ class GvecMagnetConfig(MagnetConfig):
 
         plt.tight_layout()
         plt.show()
+        if figure_path is not None:
+            plt.savefig(figure_path)
 
     def __del__(self):
         """
