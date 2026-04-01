@@ -230,7 +230,7 @@ class GvecMagnetConfig(MagnetConfig):
         # Project name
         params["ProjectName"] = "GyselaX"
         # Physics parameters
-        params["PhiEdge"] = np.pi  # toroidal flux at s=1
+        params["PhiEdge"] = np.pi  # poloidal flux at s=1
         # Rotational transform profile (iota = 1/q)
         iota_profile = 1.0 / self.q_profile
         # Avoid division by zero
@@ -346,7 +346,7 @@ class GvecMagnetConfig(MagnetConfig):
         ev = self.gvec_state.evaluate(
             "X1",
             "X2",
-            "dPhi_dr",
+            "dchi_dr",
             "iota",
             "J",
             "B_contra_t",
@@ -364,7 +364,7 @@ class GvecMagnetConfig(MagnetConfig):
         )
 
         # Store radial profiles (extract first theta/zeta slice)
-        self.dPsidr_r = ev.dPhi_dr.values[:]
+        self.dPsidr_r = ev.dchi_dr.values[:]
         self.current_r = ev.J.values[:, :, :, 0]
         self.B0 = ev.mod_B.values[0, 0, 0]  # Reference B field
 
@@ -756,21 +756,21 @@ class GvecMagnetConfig(MagnetConfig):
         theta = tor2_arr
         zeta = np.array([0.0]) if nb_grid_tor3 == 1 else np.asarray(tor3_arr_for_eval)
 
-        ev = self._evaluate_gvec(rho, theta, zeta, ["mod_B", "dPhi_dr", "J"])
+        ev = self._evaluate_gvec(rho, theta, zeta, ["mod_B", "dchi_dr", "J"])
 
         B_norm = ev.mod_B.values
         # Extract B0 from first point (r=0 or r_min, theta=0, zeta=0)
         B0 = B_norm[0, 0, 0]
         B_norm = B_norm / B0 if normaliseB else B_norm
 
-        # Extract radial profiles (dPhi_dr and J are flux-surface quantities)
+        # Extract radial profiles (dchi_dr and J are flux-surface quantities)
         # Take first slice along theta and phi (they should be constant along these)
-        dPhi_dr = ev.dPhi_dr.values
+        dchi_dr = ev.dchi_dr.values
         current_tor1 = ev.J.values
 
         # Extract 1D radial profiles (take first slice along theta and phi)
-        if dPhi_dr.ndim > 1:
-            dPhi_dr = dPhi_dr[:, 0, 0]
+        if dchi_dr.ndim > 1:
+            dchi_dr = dchi_dr[:, 0, 0]
         if current_tor1.ndim > 1:
             current_tor1 = current_tor1[:, 0, 0, 0]
 
@@ -868,7 +868,7 @@ class GvecMagnetConfig(MagnetConfig):
 
         # Initialisation of the magnetic field
         ds_magnetconf = ds_gvec_geometry[tor_coord].copy()
-        ds_magnetconf = ds_magnetconf.assign(dPsidr_tor1=("tor1", dPhi_dr))
+        ds_magnetconf = ds_magnetconf.assign(dPsidr_tor1=("tor1", dchi_dr))
         ds_magnetconf = ds_magnetconf.assign(current_tor1=("tor1", current_tor1))
         ds_magnetconf = ds_magnetconf.assign(B_contra=(["metric1"] + tor_coord, B_contra))
 
@@ -911,7 +911,7 @@ class GvecMagnetConfig(MagnetConfig):
         # Evaluate current at grid points
         theta = tor2_arr
         zeta = np.array([0.0]) if nb_grid_tor3 == 1 else np.asarray(tor3_arr)
-        ev = self._evaluate_gvec(rho, theta, zeta, ["J_contra_r", "J_contra_t", "J_contra_z", "dPhi_dr", "mu0"])
+        ev = self._evaluate_gvec(rho, theta, zeta, ["J_contra_r", "J_contra_t", "J_contra_z", "dchi_dr", "mu0"])
         J_contra_radial = ev.J_contra_r.values
         J_contra_poloidal = ev.J_contra_t.values
         J_contra_toroidal = ev.J_contra_z.values
@@ -940,7 +940,7 @@ class GvecMagnetConfig(MagnetConfig):
             return self.params
         return None
 
-    def to_hdf5(self, filename="magnet_config.h5", Nr=16, Ntheta=16, Nzeta=16, force_zero_radial_current=False):
+    def to_hdf5(self, filename="magnet_config.h5", Nr=16, Ntheta=16, Nzeta=16, force_zero_radial_current=False, rho_star = 150., gysela_fortran = True):
         """
         Save the magnetic configuration to an HDF5 file.
 
@@ -956,6 +956,7 @@ class GvecMagnetConfig(MagnetConfig):
             Number of toroidal grid points (default: 16)
         force_zero_radial_current : bool, optional
             Force the radial current to be zero (default: False)
+
         """
         import h5py
 
@@ -982,31 +983,58 @@ class GvecMagnetConfig(MagnetConfig):
         len(tor3)
 
         with h5py.File(filename, "w") as f:
-            # R and Z coordinates: save all toroidal slices
-            f.create_dataset("R", data=R_coord[:, :, :].T)
-            f.create_dataset("Z", data=Z_coord[:, :, :].T)
-
-            f.create_dataset("psi", data=Psi)
-            f.create_dataset("safety_factor", data=q)
-
-            # B and J fields: save all toroidal slices
-            f.create_dataset("B_gradr", data=B_contra[:, :, :, 0].T)
-            f.create_dataset("B_gradtheta", data=B_contra[:, :, :, 1].T)
-            f.create_dataset("B_gradphi", data=B_contra[:, :, :, 2].T)
-            f.create_dataset("mu0J_gradr", data=J_contra[:, :, :, 0].T)
-            f.create_dataset("mu0J_gradtheta", data=J_contra[:, :, :, 1].T)
-            f.create_dataset("mu0J_gradphi", data=J_contra[:, :, :, 2].T)
-
-            # Metric tensor components: save all toroidal slices
-            f.create_dataset("g11", data=CovariantMetricTensor[:, :, :, 0, 0].T)
-            f.create_dataset("g12", data=CovariantMetricTensor[:, :, :, 0, 1].T)
-            f.create_dataset("g13", data=CovariantMetricTensor[:, :, :, 0, 2].T)
-            f.create_dataset("g21", data=CovariantMetricTensor[:, :, :, 1, 0].T)
-            f.create_dataset("g22", data=CovariantMetricTensor[:, :, :, 1, 1].T)
-            f.create_dataset("g23", data=CovariantMetricTensor[:, :, :, 1, 2].T)
-            f.create_dataset("g31", data=CovariantMetricTensor[:, :, :, 2, 0].T)
-            f.create_dataset("g32", data=CovariantMetricTensor[:, :, :, 2, 1].T)
-            f.create_dataset("g33", data=CovariantMetricTensor[:, :, :, 2, 2].T)
+            if gysela_fortran:
+                f.create_dataset('R', data=rho_star*R_coord[:,:,0].T)
+                f.create_dataset('Z', data=rho_star*Z_coord[:,:,0].T)
+            
+                f.create_dataset('psi', data=(rho_star**2)*Psi)
+                f.create_dataset('safety_factor', data=q)
+            
+                # B and J fields: save all toroidal slices
+                f.create_dataset('B_gradr', data=B_contra[:,:,0,0].T)
+                f.create_dataset('B_gradtheta', data=(1./rho_star)*B_contra[:,:,0,1].T)
+                f.create_dataset('B_gradphi', data=(1./rho_star)*B_contra[:,:,0,2].T)
+                f.create_dataset('mu0J_gradr', data=(1./rho_star)*J_contra[:,:,0,0].T)
+                f.create_dataset('mu0J_gradtheta', data=((1./rho_star)**2)*J_contra[:,:,0,1].T)
+                f.create_dataset('mu0J_gradphi', data=((1./rho_star)**2)*J_contra[:,:,0,2].T)
+            
+                # Metric tensor components: save all toroidal slices
+                f.create_dataset('g11', data=CovariantMetricTensor[:,:,0,0,0].T)
+                f.create_dataset('g12', data=rho_star*CovariantMetricTensor[:,:,0,0,1].T)
+                f.create_dataset('g13', data=CovariantMetricTensor[:,:,0,0,2].T)
+                f.create_dataset('g21', data=rho_star*CovariantMetricTensor[:,:,0,1,0].T)
+                f.create_dataset('g22', data=(rho_star**2)*CovariantMetricTensor[:,:,0,1,1].T)
+                f.create_dataset('g23', data=(rho_star**2)*CovariantMetricTensor[:,:,0,1,2].T)
+                f.create_dataset('g31', data=CovariantMetricTensor[:,:,0,2,0].T)
+                f.create_dataset('g32', data=(rho_star**2)*CovariantMetricTensor[:,:,0,2,1].T)
+                f.create_dataset('g33', data=(rho_star**2)*CovariantMetricTensor[:,:,0,2,2].T)
+                
+            else:
+                # R and Z coordinates: save all toroidal slices
+                f.create_dataset('R', data=R_coord[:,:,:].T)
+                f.create_dataset('Z', data=Z_coord[:,:,:].T)
+            
+                f.create_dataset('psi', data=Psi)
+                f.create_dataset('safety_factor', data=q)
+            
+                # B and J fields: save all toroidal slices
+                f.create_dataset('B_gradr', data=B_contra[:,:,:,0].T)
+                f.create_dataset('B_gradtheta', data=B_contra[:,:,:,1].T)
+                f.create_dataset('B_gradphi', data=B_contra[:,:,:,2].T)
+                f.create_dataset('mu0J_gradr', data=J_contra[:,:,:,0].T)
+                f.create_dataset('mu0J_gradtheta', data=J_contra[:,:,:,1].T)
+                f.create_dataset('mu0J_gradphi', data=J_contra[:,:,:,2].T)
+            
+                # Metric tensor components: save all toroidal slices
+                f.create_dataset('g11', data=CovariantMetricTensor[:,:,:,0,0].T)
+                f.create_dataset('g12', data=CovariantMetricTensor[:,:,:,0,1].T)
+                f.create_dataset('g13', data=CovariantMetricTensor[:,:,:,0,2].T)
+                f.create_dataset('g21', data=CovariantMetricTensor[:,:,:,1,0].T)
+                f.create_dataset('g22', data=CovariantMetricTensor[:,:,:,1,1].T)
+                f.create_dataset('g23', data=CovariantMetricTensor[:,:,:,1,2].T)
+                f.create_dataset('g31', data=CovariantMetricTensor[:,:,:,2,0].T)
+                f.create_dataset('g32', data=CovariantMetricTensor[:,:,:,2,1].T)
+                f.create_dataset('g33', data=CovariantMetricTensor[:,:,:,2,2].T)
 
     def plot_geometry(self, N_surf=16, N_theta=32, N_toroidal_plots=3, Nr=128, Ntheta=128):
         """
