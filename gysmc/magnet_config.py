@@ -211,7 +211,6 @@ class MagnetConfig(ABC):
         B_co = np.einsum("...ij,...j->...i", CovariantMetricTensor, B_contra)
 
         # compute curl of B in toroidal coordinates
-        tor2_arr[0] = tor2_arr[0] - 2.0*np.pi  # to match the extended tor2 in B_co
         dB3_dtor2 = np.gradient(B_co[:, :, :, 2], tor2_arr, axis=1)
         dB2_dtor3 = np.zeros_like(B_co[:, :, :, 0])
         dB1_dtor3 = np.zeros_like(B_co[:, :, :, 0])
