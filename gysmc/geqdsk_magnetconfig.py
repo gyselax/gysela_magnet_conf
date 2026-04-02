@@ -9,8 +9,8 @@ Created on 2025-11-08
 """
 
 import numpy as np
-import scipy.integrate
 from scipy.interpolate import RectBivariateSpline, CubicSpline
+
 try:
     from scipy.integrate import cumtrapz
 except ImportError:
@@ -18,7 +18,9 @@ except ImportError:
 try:
     from freeqdsk import geqdsk
 except ImportError:
-    raise ImportError("freeqdsk module is required for GEQDSKMagnetConfig. Please visit https://github.com/freegs-plasma/FreeQDSK")
+    raise ImportError(
+        "freeqdsk module is required for GEQDSKMagnetConfig. Please visit https://github.com/freegs-plasma/FreeQDSK"
+    )
 
 from .gsespline_magnetconfig import GSEMagnetConfig
 
@@ -26,20 +28,20 @@ from .gsespline_magnetconfig import GSEMagnetConfig
 class GEQDSKMagnetConfig(GSEMagnetConfig):
     """
     Class to initialise the magnetic configuration from GEQDSK equilibrium data
-    
-    This class extends MagnetConfig to work with GEQDSK (GEometry Q-grid DiSpatching sKinetic) 
+
+    This class extends MagnetConfig to work with GEQDSK (GEometry Q-grid DiSpatching sKinetic)
     format magnetic equilibrium data. It provides functionality to:
-    
+
     1. Load magnetic equilibrium data from GEQDSK format
     2. Compute R(psi,theta) and Z(psi,theta) mappings
     3. Interpolate between flux surfaces and poloidal angles
-    
+
     The R(psi,theta) and Z(psi,theta) functionality maps from:
     - psi: normalized poloidal flux (0 at magnetic axis, 1 at plasma boundary)
     - theta: poloidal angle with respect to magnetic axis (0 to 2π)
-    
+
     To Cartesian coordinates (R,Z) in the poloidal plane.
-    
+
     Attributes:
         tor1_arr: normalised minor radius r/a
         R_psi_theta: R coordinates as function of (psi, theta)
@@ -48,7 +50,17 @@ class GEQDSKMagnetConfig(GSEMagnetConfig):
         theta_grid: theta grid used for mapping
     """
 
-    def __init__(self, filename, cocos=2, thetastar=False, psinorm_max=0.95, rmax=1.0, Ninterp=1024, positive_current=False, verbose=True):
+    def __init__(
+        self,
+        filename,
+        cocos=2,
+        thetastar=False,
+        psinorm_max=0.95,
+        rmax=1.0,
+        Ninterp=1024,
+        positive_current=False,
+        verbose=True,
+    ):
         """
         Initialisation of the magnetic configuration
         :param geqdsk_data: GEQDSK data object
@@ -72,10 +84,10 @@ class GEQDSKMagnetConfig(GSEMagnetConfig):
         print("WARNING: r is related to sqrt(poloidal flux), not the geometrical minor radius!")
         print("WARNING: rmax is set at {:.4f}, linked to psinorm_max at {:.4f}".format(rmax, psinorm_max))
 
-        with open(filename, 'r') as f:
+        with open(filename, "r") as f:
             data = geqdsk.read(f, cocos=cocos)
 
-        Nint = Ninterp+1 # number of interpolation points
+        Nint = Ninterp + 1  # number of interpolation points
         self.Nint = Nint
 
         self.thetastar = thetastar
@@ -90,27 +102,35 @@ class GEQDSKMagnetConfig(GSEMagnetConfig):
             psi_sign = -1.0
 
         # optimise the location of magnetic axis
-        spline_psi = RectBivariateSpline(data.r_grid[:,0], data.z_grid[0], psi_sign *  data.psi)
-        res  = minimize(lambda x: spline_psi(x[0], x[1], grid=False), 
-                        np.array([data.rmaxis, data.zmaxis]), 
-                        method='BFGS', 
-                        options={'gtol': 1e-8, 'disp': False})
-        
+        spline_psi = RectBivariateSpline(data.r_grid[:, 0], data.z_grid[0], psi_sign * data.psi)
+        res = minimize(
+            lambda x: spline_psi(x[0], x[1], grid=False),
+            np.array([data.rmaxis, data.zmaxis]),
+            method="BFGS",
+            options={"gtol": 1e-8, "disp": False},
+        )
+
         r_axis_opt, z_axis_opt = res.x
         psi_axis_opt = res.fun
-        
+
         if verbose:
-            print("INFO: Optimized magnetic axis location: R_axis = {:.6f}, Z_axis = {:.6f}, Psi_axis = {:.6f}".format(
-                r_axis_opt, z_axis_opt, psi_axis_opt))
-            print("INFO: Original magnetic axis location: R_axis = {:.6f}, Z_axis = {:.6f}, Psi_axis = {:.6f}".format(
-                data.rmaxis, data.zmaxis, data.psi_axis))
+            print(
+                "INFO: Optimized magnetic axis location: R_axis = {:.6f}, Z_axis = {:.6f}, Psi_axis = {:.6f}".format(
+                    r_axis_opt, z_axis_opt, psi_axis_opt
+                )
+            )
+            print(
+                "INFO: Original magnetic axis location: R_axis = {:.6f}, Z_axis = {:.6f}, Psi_axis = {:.6f}".format(
+                    data.rmaxis, data.zmaxis, data.psi_axis
+                )
+            )
 
         self.geqdsk_data = data
         self.psi1_real = data.psi_boundary - psi_axis_opt
         self.psinorm_max = psinorm_max
         self.rmax = rmax
         self.smax = np.sqrt(psinorm_max)
-        self.s_at_r_one = self.smax/rmax # value of s at r = 1.0
+        self.s_at_r_one = self.smax / rmax  # value of s at r = 1.0
 
         # normalise psi to between 0 and 1
         psinorm = (data.psi - psi_axis_opt) / (data.psi_boundary - psi_axis_opt)
@@ -129,10 +149,10 @@ class GEQDSKMagnetConfig(GSEMagnetConfig):
         self.pprime = data.pprime
 
         # create spline for psi(x,y), x = R - Raxis, y = Z - Zaxis
-        xdata = data.r_grid[:,0] - self.Rmaxis
+        xdata = data.r_grid[:, 0] - self.Rmaxis
         ydata = data.z_grid[0] - self.Zmaxis
         spline_psi = RectBivariateSpline(xdata, ydata, psinorm.T)
-        
+
         # array for computed R(s, theta) and Z(s, theta)
         R_s_theta = np.zeros((Nint, Nint))
         Z_s_theta = np.zeros((Nint, Nint))
@@ -143,7 +163,7 @@ class GEQDSKMagnetConfig(GSEMagnetConfig):
         if np.abs(xbdry[0] - xbdry[-1]) < 1e-4 and np.abs(zbdry[0] - zbdry[-1]) < 1e-4:
             xbdry = xbdry[:-1]
             zbdry = zbdry[:-1]
-        boundary_angle = np.mod(np.arctan2(zbdry, xbdry) + 2*np.pi, 2*np.pi)
+        boundary_angle = np.mod(np.arctan2(zbdry, xbdry) + 2 * np.pi, 2 * np.pi)
 
         # sort boundary points by angle
         sorted_indices = np.argsort(boundary_angle)
@@ -152,15 +172,15 @@ class GEQDSKMagnetConfig(GSEMagnetConfig):
         boundary_angle_sorted = boundary_angle[sorted_indices]
 
         # interpolate boundary points to get x and y at desired angles
-        boundary_angle_sorted = np.append(boundary_angle_sorted, boundary_angle_sorted[0] + 2*np.pi)
+        boundary_angle_sorted = np.append(boundary_angle_sorted, boundary_angle_sorted[0] + 2 * np.pi)
         xbdry_sorted = np.append(xbdry_sorted, xbdry_sorted[0])
         ybdry_sorted = np.append(ybdry_sorted, ybdry_sorted[0])
-        xbdry_cb = CubicSpline(boundary_angle_sorted, xbdry_sorted, bc_type='periodic')
-        ybdry_cb = CubicSpline(boundary_angle_sorted, ybdry_sorted, bc_type='periodic')
+        xbdry_cb = CubicSpline(boundary_angle_sorted, xbdry_sorted, bc_type="periodic")
+        ybdry_cb = CubicSpline(boundary_angle_sorted, ybdry_sorted, bc_type="periodic")
 
         # interpolation grid for s and theta
         s_target = np.linspace(0, self.smax, Nint, True)
-        theta_vals = np.linspace(0, 2*np.pi, Nint, endpoint=True)
+        theta_vals = np.linspace(0, 2 * np.pi, Nint, endpoint=True)
         self.s_target = s_target
         self.theta_vals = theta_vals
 
@@ -168,7 +188,7 @@ class GEQDSKMagnetConfig(GSEMagnetConfig):
         R_at_r_one = np.zeros([Nint])
         Z_at_r_one = np.zeros([Nint])
 
-        for i in range(Nint-1):
+        for i in range(Nint - 1):
             theta = theta_vals[i]
             x_bdry = xbdry_cb(theta)
             y_bdry = ybdry_cb(theta)
@@ -208,19 +228,37 @@ class GEQDSKMagnetConfig(GSEMagnetConfig):
         self.psi1_norm = self.psi1_real / (self.Bvac0_real * self.ageo_real**2)
 
         if verbose:
-            print('INFO: Computational boundary at r={:.4f}: s_max={:.4f}, psinorm_max={:.4f}'.format(
-                rmax, self.smax, psinorm_max))
-            print('INFO: Plasma boundary at r=1.0: s(r=1.0)={:.4f}, psinorm(r=1.0)={:.4f}'.format(
-                self.s_at_r_one, self.s_at_r_one**2))
-            print('INFO: Geometry in original unit: R_geo = {:.4f}, a_geo(at r=1) = {:.4f}, Aspect ratio = {:.4f}'.format(
-                self.Rgeo_real, self.ageo_real, self.aspect_ratio))
-            print('INFO: Magnetic field in original unit: Bvac_geocentre = {:.4f}, B_axis = {:.4f}'.format(
-                self.Bvac0_real, self.Bphyaxis_real))
-            print('INFO: Psi1: in original unit psi1 = {:.4f}, normalised to Bvac0*a_geo^2 psi1_norm = {:.4f}'.format(
-                self.psi1_real, self.psi1_norm))
+            print(
+                "INFO: Computational boundary at r={:.4f}: s_max={:.4f}, psinorm_max={:.4f}".format(
+                    rmax, self.smax, psinorm_max
+                )
+            )
+            print(
+                "INFO: Plasma boundary at r=1.0: s(r=1.0)={:.4f}, psinorm(r=1.0)={:.4f}".format(
+                    self.s_at_r_one, self.s_at_r_one**2
+                )
+            )
+            print(
+                "INFO: Geometry in original unit: R_geo = {:.4f}, a_geo(at r=1) = {:.4f}, Aspect ratio = {:.4f}".format(
+                    self.Rgeo_real, self.ageo_real, self.aspect_ratio
+                )
+            )
+            print(
+                "INFO: Magnetic field in original unit: Bvac_geocentre = {:.4f}, B_axis = {:.4f}".format(
+                    self.Bvac0_real, self.Bphyaxis_real
+                )
+            )
+            print(
+                "INFO: Psi1: in original unit psi1 = {:.4f}, normalised to Bvac0*a_geo^2 psi1_norm = {:.4f}".format(
+                    self.psi1_real, self.psi1_norm
+                )
+            )
 
-        print("INFO: B is normalised to Bvac0={:.4f} at Rgeo={:.4f}, length to a_geo={:.4f}".format(
-            self.Bvac0_real, self.Rgeo_real, self.ageo_real))
+        print(
+            "INFO: B is normalised to Bvac0={:.4f} at Rgeo={:.4f}, length to a_geo={:.4f}".format(
+                self.Bvac0_real, self.Rgeo_real, self.ageo_real
+            )
+        )
 
         # normalise R and Z by a_geo
         R_s_theta /= self.ageo_real
@@ -239,34 +277,34 @@ class GEQDSKMagnetConfig(GSEMagnetConfig):
         psiunit = self.Bvac0_real * self.ageo_real**2
         mu0punit = self.Bvac0_real**2
         Fprofile_norm = data.fpol / Funit
-        FFprimeprofile_norm = data.ffprime / (Funit**2/psiunit)
+        FFprimeprofile_norm = data.ffprime / (Funit**2 / psiunit)
         pprime_norm = mu0 * data.pprime / (mu0punit / psiunit)
 
-        self.F_cb = CubicSpline(r_grid_to_interp, Fprofile_norm, bc_type=((1,0), (2,0)))
-        self.FFprime_cb = CubicSpline(r_grid_to_interp, FFprimeprofile_norm, bc_type='natural')
-        self.pprime_cb = CubicSpline(r_grid_to_interp, pprime_norm, bc_type='natural')
-        self.q_cb = CubicSpline(r_grid_to_interp, data.qpsi, bc_type=((1,0), (2,0)))
+        self.F_cb = CubicSpline(r_grid_to_interp, Fprofile_norm, bc_type=((1, 0), (2, 0)))
+        self.FFprime_cb = CubicSpline(r_grid_to_interp, FFprimeprofile_norm, bc_type="natural")
+        self.pprime_cb = CubicSpline(r_grid_to_interp, pprime_norm, bc_type="natural")
+        self.q_cb = CubicSpline(r_grid_to_interp, data.qpsi, bc_type=((1, 0), (2, 0)))
 
         # construct cubic splines for R(r) and Z(r) at each theta, extend r to negative for natural BCs
         self.r_grid = s_target / self.smax * self.rmax
         s_combined = np.concatenate([-s_target[::-1], s_target[1:]])
         r_combined = s_combined / self.smax * self.rmax
-        R_combined = np.zeros([2*Nint-1, Nint])
-        Z_combined = np.zeros([2*Nint-1, Nint])
+        R_combined = np.zeros([2 * Nint - 1, Nint])
+        Z_combined = np.zeros([2 * Nint - 1, Nint])
 
         # combine R and Z for negative and positive s for smooth natural BCs
-        for i in range(Nint//2):
+        for i in range(Nint // 2):
             Nhalf = Nint // 2
-            R_combined[:, i] = np.concatenate([R_s_theta[::-1, i+Nhalf], R_s_theta[1:, i]]) 
-            Z_combined[:, i] = np.concatenate([Z_s_theta[::-1, i+Nhalf], Z_s_theta[1:, i]])
-            R_combined[:, i+Nhalf] = R_combined[::-1, i]
-            Z_combined[:, i+Nhalf] = Z_combined[::-1, i]
+            R_combined[:, i] = np.concatenate([R_s_theta[::-1, i + Nhalf], R_s_theta[1:, i]])
+            Z_combined[:, i] = np.concatenate([Z_s_theta[::-1, i + Nhalf], Z_s_theta[1:, i]])
+            R_combined[:, i + Nhalf] = R_combined[::-1, i]
+            Z_combined[:, i + Nhalf] = Z_combined[::-1, i]
 
         R_combined[:, -1] = R_combined[:, 0]
         Z_combined[:, -1] = Z_combined[:, 0]
 
         self.cb_R_r = CubicSpline(r_combined, R_combined, axis=0)
-        self.cb_Z_r= CubicSpline(r_combined, Z_combined, axis=0)
+        self.cb_Z_r = CubicSpline(r_combined, Z_combined, axis=0)
 
         if self.thetastar:
             r_grid_modified = self.r_grid
@@ -275,7 +313,7 @@ class GEQDSKMagnetConfig(GSEMagnetConfig):
             B_contra = self.get_Bcontra(r_grid_modified, self.theta_vals, np.array([0.0]))
             q = self.get_q(r_grid_modified)
 
-            dthetastar_dtheta =  B_contra[:, :, 0, 2] / B_contra[:, :, 0, 1] / q[:, None]
+            dthetastar_dtheta = B_contra[:, :, 0, 2] / B_contra[:, :, 0, 1] / q[:, None]
             thetastar_vals = cumtrapz(dthetastar_dtheta, self.theta_vals, initial=0.0, axis=1)
 
             # normalise thetastar to [0, 2pi]
@@ -286,30 +324,30 @@ class GEQDSKMagnetConfig(GSEMagnetConfig):
 
             # reconstruct R and Z splines at thetastar values
             for i in range(Nint):
-                cb_R_thetastar = CubicSpline(thetastar_vals[i], R_s_theta[i], axis=1, bc_type='periodic')
-                cb_Z_thetastar = CubicSpline(thetastar_vals[i], Z_s_theta[i], axis=1, bc_type='periodic')
+                cb_R_thetastar = CubicSpline(thetastar_vals[i], R_s_theta[i], axis=1, bc_type="periodic")
+                cb_Z_thetastar = CubicSpline(thetastar_vals[i], Z_s_theta[i], axis=1, bc_type="periodic")
 
                 # obtain R and Z at uniform thetastar grid
                 R_s_thetastar[i] = cb_R_thetastar(self.theta_vals)
                 Z_s_thetastar[i] = cb_Z_thetastar(self.theta_vals)
 
             # reconstruct R(r) and Z(r) splines at each thetastar
-            R_combined = np.zeros([2*Nint-1, Nint])
-            Z_combined = np.zeros([2*Nint-1, Nint])
+            R_combined = np.zeros([2 * Nint - 1, Nint])
+            Z_combined = np.zeros([2 * Nint - 1, Nint])
 
             # combine R and Z for negative and positive s for smooth natural BCs
-            for i in range(Nint//2):
+            for i in range(Nint // 2):
                 Nhalf = Nint // 2
-                R_combined[:, i] = np.concatenate([R_s_thetastar[::-1, i+Nhalf], R_s_thetastar[1:, i]]) 
-                Z_combined[:, i] = np.concatenate([Z_s_thetastar[::-1, i+Nhalf], Z_s_thetastar[1:, i]])
-                R_combined[:, i+Nhalf] = R_combined[::-1, i]
-                Z_combined[:, i+Nhalf] = Z_combined[::-1, i]
+                R_combined[:, i] = np.concatenate([R_s_thetastar[::-1, i + Nhalf], R_s_thetastar[1:, i]])
+                Z_combined[:, i] = np.concatenate([Z_s_thetastar[::-1, i + Nhalf], Z_s_thetastar[1:, i]])
+                R_combined[:, i + Nhalf] = R_combined[::-1, i]
+                Z_combined[:, i + Nhalf] = Z_combined[::-1, i]
 
             R_combined[:, -1] = R_combined[:, 0]
             Z_combined[:, -1] = Z_combined[:, 0]
 
             self.cb_R_r = CubicSpline(r_combined, R_combined, axis=0)
-            self.cb_Z_r= CubicSpline(r_combined, Z_combined, axis=0)
+            self.cb_Z_r = CubicSpline(r_combined, Z_combined, axis=0)
 
     def plot_flux_surfaces(self, num_surfaces=10, normalised_units=True):
         """
@@ -320,17 +358,17 @@ class GEQDSKMagnetConfig(GSEMagnetConfig):
 
         # plot psi
         if normalised_units:
-            plt.pcolormesh(self.R_grid_original/self.ageo_real, self.Z_grid_original/self.ageo_real, self.psinorm.T)
-            plt.colorbar(label='Normalized Psi')
-            plt.plot(self.Rbdry/self.ageo_real, self.Zbdry/self.ageo_real, color='k')
-            plt.scatter(self.Rmaxis/self.ageo_real, self.Zmaxis/self.ageo_real, marker='x', color='r')
+            plt.pcolormesh(self.R_grid_original / self.ageo_real, self.Z_grid_original / self.ageo_real, self.psinorm.T)
+            plt.colorbar(label="Normalized Psi")
+            plt.plot(self.Rbdry / self.ageo_real, self.Zbdry / self.ageo_real, color="k")
+            plt.scatter(self.Rmaxis / self.ageo_real, self.Zmaxis / self.ageo_real, marker="x", color="r")
         else:
-            plt.pcolormesh(self.R_grid_original, self.Z_grid_original, self.psinorm.T*self.psi1_real)
-            plt.colorbar(label='Psi')
-            plt.plot(self.Rbdry, self.Zbdry, color='k')
-            plt.scatter(self.Rmaxis, self.Zmaxis, marker='x', color='r')
+            plt.pcolormesh(self.R_grid_original, self.Z_grid_original, self.psinorm.T * self.psi1_real)
+            plt.colorbar(label="Psi")
+            plt.plot(self.Rbdry, self.Zbdry, color="k")
+            plt.scatter(self.Rmaxis, self.Zmaxis, marker="x", color="r")
 
-        r_values = np.linspace(0, self.rmax, num_surfaces+1, True)[1:]  # exclude r=0
+        r_values = np.linspace(0, self.rmax, num_surfaces + 1, True)[1:]  # exclude r=0
 
         R_vals = self.cb_R_r(r_values)
         Z_vals = self.cb_Z_r(r_values)
@@ -338,22 +376,23 @@ class GEQDSKMagnetConfig(GSEMagnetConfig):
         Z_vals_r_one = self.cb_Z_r(1.0)
 
         if normalised_units:
-            for i in range(num_surfaces-1):
-                plt.plot(R_vals[i], Z_vals[i], 'w-')
+            for i in range(num_surfaces - 1):
+                plt.plot(R_vals[i], Z_vals[i], "w-")
             if self.rmax > 1.0:
-                plt.plot(R_vals_r_one, Z_vals_r_one, 'r--', label='r=1.0')
-            plt.plot(R_vals[-1], Z_vals[-1], 'r-', label=r'$r={:.2f}$'.format(self.rmax))
-            plt.xlabel('R/a')
-            plt.ylabel('Z/a')
+                plt.plot(R_vals_r_one, Z_vals_r_one, "r--", label="r=1.0")
+            plt.plot(R_vals[-1], Z_vals[-1], "r-", label=r"$r={:.2f}$".format(self.rmax))
+            plt.xlabel("R/a")
+            plt.ylabel("Z/a")
         else:
             for i in range(num_surfaces):
-                plt.plot(R_vals[i]*self.ageo_real, Z_vals[i]*self.ageo_real, 'w-')
+                plt.plot(R_vals[i] * self.ageo_real, Z_vals[i] * self.ageo_real, "w-")
             if self.rmax > 1.0:
-                plt.plot(R_vals_r_one*self.ageo_real, Z_vals_r_one*self.ageo_real, 'r--', label='r=1.0')
-            plt.plot(R_vals[-1]*self.ageo_real, Z_vals[-1]*self.ageo_real, 'r-', label=r'$r={:.2f}$'.format(self.rmax))
-            plt.xlabel('R')
-            plt.ylabel('Z')
-        plt.title('Flux Surfaces from GEQDSK Data')
-        plt.axis('equal')
+                plt.plot(R_vals_r_one * self.ageo_real, Z_vals_r_one * self.ageo_real, "r--", label="r=1.0")
+            plt.plot(
+                R_vals[-1] * self.ageo_real, Z_vals[-1] * self.ageo_real, "r-", label=r"$r={:.2f}$".format(self.rmax)
+            )
+            plt.xlabel("R")
+            plt.ylabel("Z")
+        plt.title("Flux Surfaces from GEQDSK Data")
+        plt.axis("equal")
         plt.legend()
-    
