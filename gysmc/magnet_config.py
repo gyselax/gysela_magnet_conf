@@ -141,14 +141,14 @@ class MagnetConfig(ABC):
         Z_coord = np.concatenate((Z_coord[:,-1:,0], Z_coord[:,:,0]), axis=1)
         tor2_arrext = np.concatenate((tor2_arr[-1:] - 2.0*np.pi, tor2_arr))
         # compute gij from finite difference
-        dR_dtor1 = np.gradient(R_coord, tor1_arr, axis=0)[:,1:]
-        dR_dtor2 = np.gradient(R_coord, tor2_arrext, axis=1)[:,1:]
-        dZ_dtor1 = np.gradient(Z_coord, tor1_arr, axis=0)[:,1:]
-        dZ_dtor2 = np.gradient(Z_coord, tor2_arrext, axis=1)[:,1:]
+        dR_dtor1 = np.gradient(R_coord, tor1_arr, axis=0)[:,1:-1]
+        dR_dtor2 = np.gradient(R_coord, tor2_arrext, axis=1)[:,1:-1]
+        dZ_dtor1 = np.gradient(Z_coord, tor1_arr, axis=0)[:,1:-1]
+        dZ_dtor2 = np.gradient(Z_coord, tor2_arrext, axis=1)[:,1:-1]
         g11_fd = dR_dtor1**2 + dZ_dtor1**2
         g12_fd = dR_dtor1 * dR_dtor2 + dZ_dtor1 * dZ_dtor2
         g22_fd = dR_dtor2**2 + dZ_dtor2**2
-
+        tor2_arr = tor2_arr[1:-1]
         import matplotlib.pyplot as plt
         plt.figure(figsize=(12,4))
         plt.subplot(1,3,1)
@@ -190,8 +190,6 @@ class MagnetConfig(ABC):
             tor2_arr = np.linspace(0.0, 2.0*np.pi, 256, endpoint=False)
         tor3_arr = np.array([tor3_arr])
 
-        tor2_arr = np.concatenate((tor2_arr[-1:] - 2.0*np.pi, tor2_arr))
-
         B_contra = self.get_Bcontra(tor1_arr, tor2_arr, tor3_arr)
         J_contra = self.get_Jcontra(tor1_arr, tor2_arr, tor3_arr)
         ContravariantMetricTensor, CovariantMetricTensor = self.get_gij(tor1_arr, tor2_arr, tor3_arr)
@@ -199,6 +197,7 @@ class MagnetConfig(ABC):
         B_co = np.einsum('...ij,...j->...i', CovariantMetricTensor, B_contra)
 
         # compute curl of B in toroidal coordinates
+        tor2_arr[0] = tor2_arr[0] - 2.0*np.pi  # to match the extended tor2 in B_co
         dB3_dtor2 = np.gradient(B_co[:,:,:,2], tor2_arr, axis=1)
         dB2_dtor3 = np.zeros_like(B_co[:,:,:,0])
         dB1_dtor3 = np.zeros_like(B_co[:,:,:,0])
@@ -211,9 +210,9 @@ class MagnetConfig(ABC):
         curlB_contra[:,:,:,1] = (1.0/jacobian_det) * (dB1_dtor3 - dB3_dtor1)
         curlB_contra[:,:,:,2] = (1.0/jacobian_det) * (dB2_dtor1 - dB1_dtor2)
 
-        curlB_contra = curlB_contra[:,1:,0]  # remove the extra tor2 point
-        J_contra = J_contra[:,1:,0]  # remove the extra tor2 point
-        tor2_arr = tor2_arr[1:]  # remove the extra tor2 point
+        curlB_contra = curlB_contra[:,1:-1,0]  # remove the extra tor2 point
+        J_contra = J_contra[:,1:-1,0]  # remove the extra tor2 point
+        tor2_arr = tor2_arr[1:-1]  # remove the extra tor2 point
 
         import matplotlib.pyplot as plt
         plt.figure(figsize=(12,4))

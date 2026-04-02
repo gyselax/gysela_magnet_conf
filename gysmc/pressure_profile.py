@@ -122,7 +122,6 @@ class PressureProfile():
                     grid_r = data[:, 0]
                     Ts_r = data[:, 1]
                     spline_Ts = CubicSpline(grid_r, Ts_r, bc_type=('clamped', 'natural'))
-                    self.Ts_spline.append(spline_Ts)
                     if grid_r[-1] < rmax:
                         raise ValueError(f"Ts profile in {Ts_filename} does not cover up to rmax={rmax}")
                 else:
