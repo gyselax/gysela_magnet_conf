@@ -82,8 +82,10 @@ class CircularMagnetConfig(MagnetConfig):
         :return: Psi, dPsidr
         """
         from scipy.interpolate import CubicSpline
-        from scipy.integrate import cumtrapz
-
+        try:
+            from scipy.integrate import cumtrapz
+        except ImportError:
+            from scipy.integrate import cumulative_trapezoid as cumtrapz
         Nrint = 1024
         rint = np.linspace(0, np.max(tor1_arr), Nrint, True)
         qint = self.get_q(rint)
@@ -137,7 +139,7 @@ class CircularMagnetConfig(MagnetConfig):
 
         if self.thetastar:
             Jacobimat = self.get_jacobi_theta_thetastar_(tor1_arr, tor2_arr, tor3_arr)
-            B_contra = np.linalg.solve(Jacobimat, B_contra[...])
+            B_contra = np.linalg.solve(Jacobimat, B_contra[..., :, None])[..., 0]
 
         return B_contra
 

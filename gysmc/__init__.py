@@ -13,6 +13,7 @@ Classes:
     - GSEMagnetConfig: GSE spline-based magnetic configuration
     - GEQDSKMagnetConfig: GEQDSK file-based magnetic configuration
     - GvecMagnetConfig: GVEC ini-params file or input parameter based 3d configs
+    - CHEASEMagnetConfig: CHEASE file-based magnetic configuration
     - QProfile: Safety factor profile generator
     - PressureProfile: Pressure profile generator
 """
@@ -20,6 +21,7 @@ Classes:
 from .magnet_config import MagnetConfig
 from .circular_magnetconfig import CircularMagnetConfig
 from .culham_magnetconfig import CulhamMagnetConfig
+from .chease_magnetconfig import CHEASEMagnetConfig
 
 try:
     from .geqdsk_magnetconfig import GEQDSKMagnetConfig
@@ -37,6 +39,7 @@ __all__ = [
     "MagnetConfig",
     "CircularMagnetConfig",
     "CulhamMagnetConfig",
+    "CHEASEMagnetConfig",
     "QProfile",
     "PressureProfile",
     "GYSMagnetConfig",
