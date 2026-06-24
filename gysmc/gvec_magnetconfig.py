@@ -842,10 +842,22 @@ class GvecMagnetConfig(MagnetConfig):
             CovariantMetricTensor_12=(tor_coord, CovariantMetricTensor[0, 1, ...])
         )
         ds_gvec_geometry = ds_gvec_geometry.assign(
+            CovariantMetricTensor_13=(tor_coord, CovariantMetricTensor[0, 2, ...])
+        )
+        ds_gvec_geometry = ds_gvec_geometry.assign(
             CovariantMetricTensor_21=(tor_coord, CovariantMetricTensor[1, 0, ...])
         )
         ds_gvec_geometry = ds_gvec_geometry.assign(
             CovariantMetricTensor_22=(tor_coord, CovariantMetricTensor[1, 1, ...])
+        )
+        ds_gvec_geometry = ds_gvec_geometry.assign(
+            CovariantMetricTensor_23=(tor_coord, CovariantMetricTensor[1, 2, ...])
+        )
+        ds_gvec_geometry = ds_gvec_geometry.assign(
+            CovariantMetricTensor_31=(tor_coord, CovariantMetricTensor[2, 0, ...])
+        )
+        ds_gvec_geometry = ds_gvec_geometry.assign(
+            CovariantMetricTensor_32=(tor_coord, CovariantMetricTensor[2, 1, ...])
         )
         ds_gvec_geometry = ds_gvec_geometry.assign(
             CovariantMetricTensor_33=(tor_coord, CovariantMetricTensor[2, 2, ...])
@@ -857,10 +869,22 @@ class GvecMagnetConfig(MagnetConfig):
             ContravariantMetricTensor_12=(tor_coord, ContravariantMetricTensor[0, 1, ...])
         )
         ds_gvec_geometry = ds_gvec_geometry.assign(
+            ContravariantMetricTensor_13=(tor_coord, ContravariantMetricTensor[0, 2, ...])
+        )
+        ds_gvec_geometry = ds_gvec_geometry.assign(
             ContravariantMetricTensor_21=(tor_coord, ContravariantMetricTensor[1, 0, ...])
         )
         ds_gvec_geometry = ds_gvec_geometry.assign(
             ContravariantMetricTensor_22=(tor_coord, ContravariantMetricTensor[1, 1, ...])
+        )
+        ds_gvec_geometry = ds_gvec_geometry.assign(
+            ContravariantMetricTensor_23=(tor_coord, ContravariantMetricTensor[1, 2, ...])
+        )
+        ds_gvec_geometry = ds_gvec_geometry.assign(
+            ContravariantMetricTensor_31=(tor_coord, ContravariantMetricTensor[2, 0, ...])
+        )
+        ds_gvec_geometry = ds_gvec_geometry.assign(
+            ContravariantMetricTensor_32=(tor_coord, ContravariantMetricTensor[2, 1, ...])
         )
         ds_gvec_geometry = ds_gvec_geometry.assign(
             ContravariantMetricTensor_33=(tor_coord, ContravariantMetricTensor[2, 2, ...])
