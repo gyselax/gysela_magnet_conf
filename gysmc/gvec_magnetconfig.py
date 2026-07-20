@@ -902,6 +902,11 @@ class GvecMagnetConfig(MagnetConfig):
         ds_magnetconf = ds_magnetconf.assign(B_tor3_contra=(tor_coord, B_contra[2, ...]))
         ds_magnetconf = ds_magnetconf.assign(B_norm=(tor_coord, B_norm))
 
+        # Initialisation of the current density
+        ds_magnetconf = ds_magnetconf.assign(mu0J_tor1_contra=(tor_coord, J_contra[0, ...]))
+        ds_magnetconf = ds_magnetconf.assign(mu0J_tor2_contra=(tor_coord, J_contra[1, ...]))
+        ds_magnetconf = ds_magnetconf.assign(mu0J_tor3_contra=(tor_coord, J_contra[2, ...]))
+
         return ds_gvec_geometry, ds_magnetconf
 
     def get_Jcontra(self, tor1_arr, tor2_arr, tor3_arr, normalise=True, force_zero_radial_current=False):
