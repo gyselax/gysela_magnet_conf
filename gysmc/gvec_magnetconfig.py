@@ -693,6 +693,68 @@ class GvecMagnetConfig(MagnetConfig):
 
         return B_contra
 
+
+    def get_Jcontra(self, tor1_arr, tor2_arr, tor3_arr, normalise=True, force_zero_radial_current=False):
+        """
+        Create the current density from toroidal coordinates.
+
+        Parameters:
+        -----------
+        tor1_arr : array_like
+            Radial coordinates (r)
+        tor2_arr : array_like
+            Poloidal coordinates (theta)
+        tor3_arr : array_like
+            Toroidal coordinates (phi)
+        normalise : bool, optional
+            Normalise the current density by the magnetic field (default: True)
+        Returns:
+        --------
+        array : J_contra current density components (if normalise is False) or current density components normalised by the magnetic field (if normalise is True)
+        """
+        nb_grid_tor1 = len(tor1_arr)
+        nb_grid_tor2 = len(tor2_arr)
+        nb_grid_tor3 = np.size(tor3_arr)
+        shape_J = (nb_grid_tor1, nb_grid_tor2, nb_grid_tor3, 3)
+        J_contra = np.zeros(shape_J, dtype=float)
+        # Get current profile (J) from GVEC
+        rho = tor1_arr.copy()
+        if rho[0] == 0.0:
+            rho[0] = self.rho_min
+
+        # Evaluate current at grid points
+        theta = tor2_arr
+        zeta = np.array([0.0]) if nb_grid_tor3 == 1 else np.asarray(tor3_arr)
+        ev = self._evaluate_gvec(rho, theta, zeta, ["J_contra_r", "J_contra_t", "J_contra_z", "dchi_dr", "mu0"])
+        J_contra_radial = ev.J_contra_r.values
+        J_contra_poloidal = ev.J_contra_t.values
+        J_contra_toroidal = ev.J_contra_z.values
+
+        # Compute current density components
+        if force_zero_radial_current:
+            J_contra[:, :, :, 0] = 0.0
+        else:
+            J_contra[:, :, :, 0] = J_contra_radial
+        
+        J_contra[:, :, :, 1] = J_contra_poloidal
+        J_contra[:, :, :, 2] = J_contra_toroidal
+
+        return J_contra * ev.mu0.values if normalise else J_contra
+
+    def get_params(self):
+        """
+        Get the GVEC parameters dictionary used to create this equilibrium.
+
+        Returns:
+        --------
+        dict
+            GVEC parameters dictionary, or None if not available
+        """
+        if hasattr(self, "params"):
+            return self.params
+        return None
+
+
     def to_gyselaX(self, tor1_arr, tor2_arr, tor3_arr, normaliseB=True):
         """
         Convert the magnetic configuration to a GyselaX dataset.
@@ -763,6 +825,12 @@ class GvecMagnetConfig(MagnetConfig):
         B0 = B_norm[0, 0, 0]
         B_norm = B_norm / B0 if normaliseB else B_norm
 
+        # Get current density contravariants (returns shape: (Nr, Ntheta, Nphi, 3))
+        J_contra_gij = self.get_Jcontra(tor1_arr, tor2_arr, tor3_arr_for_eval, normalise=normaliseB)
+
+        # Transpose to match init_gvec_geometry format: (3, Nr, Ntheta, Nphi)
+        J_contra = np.transpose(J_contra_gij, (3, 0, 1, 2))
+
         # Extract radial profiles (dchi_dr and J are flux-surface quantities)
         # Take first slice along theta and phi (they should be constant along these)
         dchi_dr = ev.dchi_dr.values
@@ -780,6 +848,7 @@ class GvecMagnetConfig(MagnetConfig):
             Z_coord = Z_coord.squeeze()
             B_contra = B_contra.squeeze()
             B_norm = B_norm.squeeze()
+            J_contra = J_contra.squeeze()
             ContravariantMetricTensor = ContravariantMetricTensor.squeeze()
             CovariantMetricTensor = CovariantMetricTensor.squeeze()
 
@@ -895,6 +964,7 @@ class GvecMagnetConfig(MagnetConfig):
         ds_magnetconf = ds_magnetconf.assign(dPsidr_tor1=("tor1", dchi_dr))
         ds_magnetconf = ds_magnetconf.assign(current_tor1=("tor1", current_tor1))
         ds_magnetconf = ds_magnetconf.assign(B_contra=(["metric1"] + tor_coord, B_contra))
+        ds_magnetconf = ds_magnetconf.assign(J_contra=(["metric1"] + tor_coord, J_contra))
 
         # Extract individual B components (ellipsis handles both 2D and 3D cases)
         ds_magnetconf = ds_magnetconf.assign(B_tor1_contra=(tor_coord, B_contra[0, ...]))
@@ -909,65 +979,6 @@ class GvecMagnetConfig(MagnetConfig):
 
         return ds_gvec_geometry, ds_magnetconf
 
-    def get_Jcontra(self, tor1_arr, tor2_arr, tor3_arr, normalise=True, force_zero_radial_current=False):
-        """
-        Create the current density from toroidal coordinates.
-
-        Parameters:
-        -----------
-        tor1_arr : array_like
-            Radial coordinates (r)
-        tor2_arr : array_like
-            Poloidal coordinates (theta)
-        tor3_arr : array_like
-            Toroidal coordinates (phi)
-        normalise : bool, optional
-            Normalise the current density by the magnetic field (default: True)
-        Returns:
-        --------
-        array : J_contra current density components (if normalise is False) or current density components normalised by the magnetic field (if normalise is True)
-        """
-        nb_grid_tor1 = len(tor1_arr)
-        nb_grid_tor2 = len(tor2_arr)
-        nb_grid_tor3 = np.size(tor3_arr)
-        shape_J = (nb_grid_tor1, nb_grid_tor2, nb_grid_tor3, 3)
-        J_contra = np.zeros(shape_J, dtype=float)
-        # Get current profile (J) from GVEC
-        rho = tor1_arr.copy()
-        if rho[0] == 0.0:
-            rho[0] = self.rho_min
-
-        # Evaluate current at grid points
-        theta = tor2_arr
-        zeta = np.array([0.0]) if nb_grid_tor3 == 1 else np.asarray(tor3_arr)
-        ev = self._evaluate_gvec(rho, theta, zeta, ["J_contra_r", "J_contra_t", "J_contra_z", "dchi_dr", "mu0"])
-        J_contra_radial = ev.J_contra_r.values
-        J_contra_poloidal = ev.J_contra_t.values
-        J_contra_toroidal = ev.J_contra_z.values
-
-        # Compute current density components
-        if force_zero_radial_current:
-            J_contra[:, :, :, 0] = 0.0
-        else:
-            J_contra[:, :, :, 0] = J_contra_radial
-        
-        J_contra[:, :, :, 1] = J_contra_poloidal
-        J_contra[:, :, :, 2] = J_contra_toroidal
-
-        return J_contra * ev.mu0.values if normalise else J_contra
-
-    def get_params(self):
-        """
-        Get the GVEC parameters dictionary used to create this equilibrium.
-
-        Returns:
-        --------
-        dict
-            GVEC parameters dictionary, or None if not available
-        """
-        if hasattr(self, "params"):
-            return self.params
-        return None
 
     def to_hdf5(self, filename="magnet_config.h5", Nr=16, Ntheta=16, Nzeta=16, force_zero_radial_current=False, rho_star = 150., gysela_fortran = True):
         """
