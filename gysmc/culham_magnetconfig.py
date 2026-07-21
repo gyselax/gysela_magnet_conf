@@ -1305,6 +1305,12 @@ class CulhamMagnetConfig(MagnetConfig):
             B0 = B_norm[0, 0]
         B_norm = B_norm / B0
 
+        # Get current density contravariants (returns shape: (Nr, Ntheta, Nphi, 3))
+        J_contra_gij = self.get_Jcontra(tor1_arr, tor2_arr, tor3_arr_for_eval)
+
+        # Transpose to match init_gvec_geometry format: (3, Nr, Ntheta, Nphi)
+        J_contra = np.transpose(J_contra_gij, (3, 0, 1, 2))
+
         # Get radial profiles: dPhi_dr and current_tor1
         # dPhi_dr = R0 * f(r)
         ffunc_arr = self.spline_ffunc(tor1_arr)
@@ -1320,6 +1326,7 @@ class CulhamMagnetConfig(MagnetConfig):
             Z_coord = Z_coord.squeeze()
             B_contra = B_contra.squeeze()
             B_norm = B_norm.squeeze()
+            J_contra = J_contra.squeeze()
             ContravariantMetricTensor = ContravariantMetricTensor.squeeze()
             CovariantMetricTensor = CovariantMetricTensor.squeeze()
 
@@ -1429,11 +1436,17 @@ class CulhamMagnetConfig(MagnetConfig):
         ds_magnetconf = ds_magnetconf.assign(dPsidr_tor1=("tor1", dPhi_dr))
         ds_magnetconf = ds_magnetconf.assign(current_tor1=("tor1", current_tor1))
         ds_magnetconf = ds_magnetconf.assign(B_contra=(["metric1"] + tor_coord, B_contra))
+        ds_magnetconf = ds_magnetconf.assign(mu0J_contra=(["metric1"] + tor_coord, J_contra))
 
         # Extract individual B components (ellipsis handles both 2D and 3D cases)
         ds_magnetconf = ds_magnetconf.assign(B_tor1_contra=(tor_coord, B_contra[0, ...]))
         ds_magnetconf = ds_magnetconf.assign(B_tor2_contra=(tor_coord, B_contra[1, ...]))
         ds_magnetconf = ds_magnetconf.assign(B_tor3_contra=(tor_coord, B_contra[2, ...]))
         ds_magnetconf = ds_magnetconf.assign(B_norm=(tor_coord, B_norm))
+
+        # Extract individual mu0J components (handles both 2D and 3D cases)
+        ds_magnetconf = ds_magnetconf.assign(mu0J_tor1_contra=(tor_coord, J_contra[0, ...]))
+        ds_magnetconf = ds_magnetconf.assign(mu0J_tor2_contra=(tor_coord, J_contra[1, ...]))
+        ds_magnetconf = ds_magnetconf.assign(mu0J_tor3_contra=(tor_coord, J_contra[2, ...]))
 
         return ds_gvec_geometry, ds_magnetconf
