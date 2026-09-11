@@ -9,9 +9,15 @@ We currently support:
 - GEQDSK file
 - GVEC
 
+We provide a `pyproject.toml` that you can use to install the library in a virtual env. To do so, clone the
+repository and execute `pip install .`. There are optional dependencies if you want to use some geometries:
+- `geqdsk_magnetconfig.py`: `pip install .[geqdsk]`,
+- `gvec_magnetconfig.py`: `pip install .[gvec]`.
+You can also install both with `pip install .[geqdsk,gvec]`.
 
+If the dependencies are already installed you can also simply add the folder to ```PYTHONPATH```.
 
-To use, please clone the repository. You can either add the folder to ```PYTHONPATH``` or install it using
+Finally we also provide a helper `Makefile` that you can use with
 
 ```shell
 make install
