@@ -22,10 +22,10 @@ We also provide a helper `Makefile` that you can use with
 make install
 ```
 
-or to install both `geqdsk` and `gvec`
+You can omit the installation of `geqdsk` and `gvec` using
 
 ```shell
-make install_full
+make install_light
 ```
 
 In order to set up the environment on CEA machines, please source ```setup_env.sh```
