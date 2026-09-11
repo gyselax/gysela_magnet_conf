@@ -1,4 +1,4 @@
-.PHONY: install install_full clean example activate
+.PHONY: install install_light clean example activate
 
 VENV = venv
 PYTHON = $(VENV)/bin/python
@@ -6,11 +6,11 @@ PIP = $(VENV)/bin/pip
 PROJECT_ROOT = $(shell pwd)
 EXAMPLES_DIR = $(PROJECT_ROOT)/examples
 
-install: $(VENV)
+install_light: $(VENV)
 	$(PIP) install .
 	@echo "Installation complete! Activate the virtual environment with: source $(VENV)/bin/activate"
 
-install_full: $(VENV)
+install: $(VENV)
 	$(PIP) install .[geqdsk,gvec]
 	@echo "Installation complete! Activate the virtual environment with: source $(VENV)/bin/activate"
 
