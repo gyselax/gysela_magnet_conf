@@ -1,26 +1,18 @@
-.PHONY: install clean example activate
+.PHONY: install install_full clean example activate
 
 VENV = venv
 PYTHON = $(VENV)/bin/python
 PIP = $(VENV)/bin/pip
 PROJECT_ROOT = $(shell pwd)
-FREEQDSK_DIR = $(PROJECT_ROOT)/gysmc/freeqdsk
 EXAMPLES_DIR = $(PROJECT_ROOT)/examples
 
-install: $(VENV) submodules
-	$(PIP) install --upgrade pip
-	$(PIP) install -r requirements.txt
-	$(PIP) install fortranformat~=2.0
-	$(PIP) install -e $(FREEQDSK_DIR)
-	@if ! grep -q "export PYTHONPATH.*$(PROJECT_ROOT)" $(VENV)/bin/activate; then \
-		echo "export PYTHONPATH=\"$$PYTHONPATH:$(PROJECT_ROOT)\"" >> $(VENV)/bin/activate; \
-	fi
+install: $(VENV)
+	$(PIP) install .
 	@echo "Installation complete! Activate the virtual environment with: source $(VENV)/bin/activate"
 
-submodules:
-	@if [ -f .gitmodules ]; then \
-		git submodule update --init --recursive; \
-	fi
+install_full: $(VENV)
+	$(PIP) install .[geqdsk,gvec]
+	@echo "Installation complete! Activate the virtual environment with: source $(VENV)/bin/activate"
 
 $(VENV):
 	python3 -m venv $(VENV)
@@ -56,4 +48,3 @@ activate:
 clean:
 	rm -rf $(VENV)
 	@echo "Virtual environment removed"
-

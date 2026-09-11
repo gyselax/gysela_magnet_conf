@@ -13,14 +13,19 @@ We provide a `pyproject.toml` that you can use to install the library in a virtu
 repository and execute `pip install .`. There are optional dependencies if you want to use more geometries:
 - `geqdsk_magnetconfig.py`: `pip install .[geqdsk]`,
 - `gvec_magnetconfig.py`: `pip install .[gvec]`.
-You can also install both with `pip install .[geqdsk,gvec]`.
+You can also install both with `pip install .[geqdsk,gvec]`. Beware that you need the dependencies of `gvec`
+for the installation to succeed.
 
-If the dependencies are already installed you can also simply add the folder to ```PYTHONPATH```.
-
-Finally we also provide a helper `Makefile` that you can use with
+We also provide a helper `Makefile` that you can use with
 
 ```shell
 make install
+```
+
+or to install both `geqdsk` and `gvec`
+
+```shell
+make install_full
 ```
 
 In order to set up the environment on CEA machines, please source ```setup_env.sh```
